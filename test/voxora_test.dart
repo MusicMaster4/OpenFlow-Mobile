@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:voxora/src/models/transcript_entry.dart';
 import 'package:voxora/src/models/usage_stats.dart';
 import 'package:voxora/src/services/openrouter_service.dart';
+import 'package:voxora/src/services/recording_service.dart';
 
 void main() {
   test('transcript entry survives local JSON round-trip', () {
@@ -54,6 +57,39 @@ void main() {
         ),
       ),
     );
+  });
+
+  test('header-only audio is rejected before reaching OpenRouter', () async {
+    final directory = await Directory.systemTemp.createTemp('openflow_test_');
+    final file = File('${directory.path}${Platform.pathSeparator}empty.wav');
+    await file.writeAsBytes(List<int>.filled(44, 0));
+    final service = OpenRouterService();
+    addTearDown(() async {
+      service.dispose();
+      await directory.delete(recursive: true);
+    });
+
+    await expectLater(
+      service.transcribe(file: file, apiKey: 'unused', format: 'wav'),
+      throwsA(
+        isA<OpenRouterException>().having(
+          (error) => error.message,
+          'message',
+          contains('não capturou áudio'),
+        ),
+      ),
+    );
+  });
+
+  test('native microphone amplitude produces visible recorder bands', () {
+    final silence = RecordingService.frameFromDecibels(-160);
+    final speech = RecordingService.frameFromDecibels(-18);
+
+    expect(silence.level, 0);
+    expect(silence.bands, everyElement(0));
+    expect(speech.level, greaterThan(0));
+    expect(speech.bands, hasLength(11));
+    expect(speech.bands, everyElement(greaterThan(0)));
   });
 
   test('usage stats preserve desktop metrics and daily totals', () {

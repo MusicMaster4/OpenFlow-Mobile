@@ -45,8 +45,10 @@ class OpenRouterService {
     String languageHint = 'auto',
   }) async {
     final bytes = await file.readAsBytes();
-    if (bytes.isEmpty) {
-      throw const OpenRouterException('O arquivo de áudio está vazio.');
+    if (!_hasAudioPayload(bytes, format)) {
+      throw const OpenRouterException(
+        'O microfone não capturou áudio. Tente gravar novamente.',
+      );
     }
 
     final body = <String, Object>{
@@ -143,6 +145,26 @@ class OpenRouterService {
       audioDurationMs: (seconds * 1000).round(),
       costUsd: (usage['cost'] as num?)?.toDouble() ?? 0,
     );
+  }
+
+  static bool _hasAudioPayload(List<int> bytes, String format) {
+    if (bytes.length < 64) return false;
+    if (format.toLowerCase() != 'wav') return true;
+
+    // A PCM/WAV without samples is exactly a RIFF header (normally 44 bytes).
+    // Reading the data-chunk length also catches variants with extra metadata.
+    for (var index = 12; index + 8 <= bytes.length;) {
+      final chunk = String.fromCharCodes(bytes.sublist(index, index + 4));
+      final length =
+          bytes[index + 4] |
+          (bytes[index + 5] << 8) |
+          (bytes[index + 6] << 16) |
+          (bytes[index + 7] << 24);
+      if (chunk == 'data') return length > 0 && index + 8 < bytes.length;
+      if (length < 0) return false;
+      index += 8 + length + (length.isOdd ? 1 : 0);
+    }
+    return false;
   }
 
   static String? _errorMessageFrom(Map<String, dynamic> payload) {
