@@ -1,7 +1,9 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:voxora/src/models/transcript_entry.dart';
 import 'package:voxora/src/models/usage_stats.dart';
 import 'package:voxora/src/services/openrouter_service.dart';
@@ -58,6 +60,60 @@ void main() {
       ),
     );
   });
+
+  test('OpenRouter explains a generic provider format failure', () {
+    final response = http.Response(
+      '{"error":{"message":"Provider returned 400"}}',
+      400,
+    );
+
+    expect(
+      () => OpenRouterService.decodeResponse(response, elapsedMs: 10),
+      throwsA(
+        isA<OpenRouterException>().having(
+          (error) => error.message,
+          'message',
+          allOf(contains('recusou o áudio'), contains('WAV')),
+        ),
+      ),
+    );
+  });
+
+  test(
+    'OpenRouter receives a valid WAV request without optional noise',
+    () async {
+      late http.Request captured;
+      final client = MockClient((request) async {
+        captured = request;
+        return http.Response('{"text":"Funcionou.","model":"test-model"}', 200);
+      });
+      final directory = await Directory.systemTemp.createTemp('openflow_wav_');
+      final file = File('${directory.path}${Platform.pathSeparator}speech.wav');
+      await file.writeAsBytes(_wavWithOneSample());
+      final service = OpenRouterService(client: client);
+      addTearDown(() async {
+        service.dispose();
+        await directory.delete(recursive: true);
+      });
+
+      final result = await service.transcribe(
+        file: file,
+        apiKey: 'test-key',
+        format: 'wav',
+      );
+      final body = jsonDecode(captured.body) as Map<String, dynamic>;
+      final inputAudio = body['input_audio'] as Map<String, dynamic>;
+
+      expect(captured.url, OpenRouterService.endpoint);
+      expect(captured.headers['authorization'], 'Bearer test-key');
+      expect(body['model'], OpenRouterService.model);
+      expect(body, isNot(contains('language')));
+      expect(body, isNot(contains('temperature')));
+      expect(inputAudio['format'], 'wav');
+      expect(inputAudio['data'], isNot(startsWith('data:')));
+      expect(result.text, 'Funcionou.');
+    },
+  );
 
   test('header-only audio is rejected before reaching OpenRouter', () async {
     final directory = await Directory.systemTemp.createTemp('openflow_test_');
@@ -128,4 +184,32 @@ void main() {
     expect(restored.totalCostUsd, closeTo(0.003, 0.000001));
     expect(restored.dailyWords['2026-08-18'], 2);
   });
+}
+
+List<int> _wavWithOneSample() {
+  final bytes = List<int>.filled(66, 0);
+  void ascii(int offset, String value) {
+    bytes.setRange(offset, offset + value.length, value.codeUnits);
+  }
+
+  void littleEndian(int offset, int value, int length) {
+    for (var index = 0; index < length; index += 1) {
+      bytes[offset + index] = (value >> (index * 8)) & 0xff;
+    }
+  }
+
+  ascii(0, 'RIFF');
+  littleEndian(4, 58, 4);
+  ascii(8, 'WAVE');
+  ascii(12, 'fmt ');
+  littleEndian(16, 16, 4);
+  littleEndian(20, 1, 2);
+  littleEndian(22, 1, 2);
+  littleEndian(24, 16000, 4);
+  littleEndian(28, 32000, 4);
+  littleEndian(32, 2, 2);
+  littleEndian(34, 16, 2);
+  ascii(36, 'data');
+  littleEndian(40, 22, 4);
+  return bytes;
 }

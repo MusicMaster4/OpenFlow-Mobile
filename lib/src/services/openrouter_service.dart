@@ -57,7 +57,6 @@ class OpenRouterService {
         'data': base64Encode(bytes),
         'format': format,
       },
-      'temperature': 0,
     };
     if (languageHint != 'auto') body['language'] = languageHint;
 
@@ -113,7 +112,10 @@ class OpenRouterService {
     }
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      final apiMessage = _errorMessageFrom(payload);
+      final apiMessage = _errorMessageFrom(
+        payload,
+        statusCode: response.statusCode,
+      );
       final friendly = switch (response.statusCode) {
         401 => 'Chave da OpenRouter inválida ou expirada.',
         402 => 'Saldo insuficiente na OpenRouter.',
@@ -167,10 +169,21 @@ class OpenRouterService {
     return false;
   }
 
-  static String? _errorMessageFrom(Map<String, dynamic> payload) {
+  static String? _errorMessageFrom(
+    Map<String, dynamic> payload, {
+    required int statusCode,
+  }) {
     final error = payload['error'];
     if (error is Map && error['message'] is String) {
-      return (error['message'] as String).trim();
+      final message = (error['message'] as String).trim();
+      if (statusCode == 400 &&
+          RegExp(
+            r'^provider returned(?: an error| 400)?$',
+            caseSensitive: false,
+          ).hasMatch(message)) {
+        return 'O provedor recusou o áudio. Use WAV, MP3 ou FLAC e tente novamente.';
+      }
+      return message;
     }
     if (payload['message'] is String) {
       return (payload['message'] as String).trim();

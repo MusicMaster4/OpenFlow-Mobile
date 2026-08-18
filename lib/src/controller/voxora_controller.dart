@@ -550,7 +550,8 @@ class VoxoraController extends ChangeNotifier {
         if (isRecording) await cancelRecording();
       case 'dismiss':
         floatingOverlayEnabled = false;
-        await _storage.saveFloatingOverlay(false);
+        // Keep the saved preference enabled: dragging to the target only hides
+        // this service instance, so the overlay returns when the app is opened.
         notifyListeners();
     }
   }

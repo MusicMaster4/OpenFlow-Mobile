@@ -48,9 +48,12 @@ class RecordingService {
   Future<RecordingStart> start() async {
     final temp = await getTemporaryDirectory();
     final stamp = DateTime.now().millisecondsSinceEpoch;
-    final supportsAac = await _recorder.isEncoderSupported(AudioEncoder.aacLc);
-    final encoder = supportsAac ? AudioEncoder.aacLc : AudioEncoder.wav;
-    final format = supportsAac ? 'm4a' : 'wav';
+    // MAI-Transcribe 1.5 accepts WAV, MP3, or FLAC. Android's native AAC
+    // recorder writes an M4A container, which Azure rejects with HTTP 400.
+    // PCM/WAV is supported natively by the record package and also gives the
+    // transcription provider the least ambiguous input possible.
+    const encoder = AudioEncoder.wav;
+    const format = 'wav';
     final path = '${temp.path}${Platform.pathSeparator}openflow_$stamp.$format';
     await _recorder.start(_recordConfig(encoder), path: path);
     _amplitudeSubscription = _recorder
@@ -71,11 +74,7 @@ class RecordingService {
     noiseSuppress: true,
     streamBufferSize: 2048,
     androidConfig: AndroidRecordConfig(
-      // Android's MediaRecorder writes the container natively and is the
-      // stability-oriented implementation recommended by the record package.
-      // Keeping capture out of Dart also prevents lifecycle/event-channel
-      // interruptions from producing a header-only file.
-      useLegacy: Platform.isAndroid && encoder == AudioEncoder.aacLc,
+      useLegacy: false,
       audioSource: AndroidAudioSource.mic,
       service: const AndroidService(
         title: 'OpenFlow está gravando',
