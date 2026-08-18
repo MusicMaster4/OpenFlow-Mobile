@@ -13,11 +13,13 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PixelFormat
+import android.graphics.RectF
 import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
 import android.view.GestureDetector
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
@@ -31,6 +33,8 @@ class FloatingOverlayService : Service() {
     private lateinit var windowManager: WindowManager
     private var bubble: FloatingWaveView? = null
     private var layoutParams: WindowManager.LayoutParams? = null
+    private var removalMenu: RemovalMenuView? = null
+    private var removalMenuParams: WindowManager.LayoutParams? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -87,10 +91,22 @@ class FloatingOverlayService : Service() {
         }
         bubble = FloatingWaveView(
             this,
-            onMove = { deltaX, deltaY -> moveBubble(deltaX, deltaY) },
+            onMove = { deltaX, deltaY ->
+                hideRemovalMenu()
+                moveBubble(deltaX, deltaY)
+            },
             onMoveFinished = { savePosition() },
-            onAction = { event -> sendOverlayEvent(event) },
+            onAction = { event ->
+                hideRemovalMenu()
+                sendOverlayEvent(event)
+            },
+            onLongPress = { showRemovalMenu() },
         )
+        if (pendingKeepScreenOn) {
+            layoutParams?.flags = layoutParams?.flags?.or(
+                WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
+            ) ?: 0
+        }
         windowManager.addView(bubble, layoutParams)
         instance = this
         pendingState?.let { snapshot ->
@@ -117,16 +133,84 @@ class FloatingOverlayService : Service() {
             .apply()
     }
 
-    private fun sendOverlayEvent(event: String) {
+    private fun sendOverlayEvent(event: String, onDelivered: (() -> Unit)? = null) {
+        if (OpenFlowEngine.dispatchOverlayAction(event, onDelivered)) return
         sendBroadcast(
             Intent(ACTION_OVERLAY_EVENT)
                 .setPackage(packageName)
                 .putExtra(EXTRA_EVENT, event),
         )
+        onDelivered?.invoke()
     }
 
     private fun updateBubble(state: String, level: Double, bands: DoubleArray) {
+        if (state != "idle") hideRemovalMenu()
         bubble?.update(state, level, bands)
+    }
+
+    private fun showRemovalMenu() {
+        if (removalMenu != null) return
+        val bubbleParams = layoutParams ?: return
+        val width = dp(136)
+        val height = dp(46)
+        val displayWidth = resources.displayMetrics.widthPixels
+        val displayHeight = resources.displayMetrics.heightPixels
+        val menuX = (bubbleParams.x + (bubbleParams.width - width) / 2)
+            .coerceIn(dp(8), max(dp(8), displayWidth - width - dp(8)))
+        val menuY = if (bubbleParams.y >= height + dp(12)) {
+            bubbleParams.y - height - dp(8)
+        } else {
+            (bubbleParams.y + bubbleParams.height + dp(8))
+                .coerceAtMost(displayHeight - height - dp(8))
+        }
+        removalMenuParams = WindowManager.LayoutParams(
+            width,
+            height,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            } else {
+                @Suppress("DEPRECATION")
+                WindowManager.LayoutParams.TYPE_PHONE
+            },
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = menuX
+            y = menuY
+        }
+        removalMenu = RemovalMenuView(this) {
+            OpenFlowFeedback.play(applicationContext, "close")
+            sendOverlayEvent("dismiss") {
+                hideRemovalMenu()
+                stopSelf()
+            }
+        }
+        windowManager.addView(removalMenu, removalMenuParams)
+    }
+
+    private fun hideRemovalMenu() {
+        removalMenu?.let { view ->
+            try {
+                windowManager.removeView(view)
+            } catch (_: Throwable) {
+                // The menu may already have been removed with the service window.
+            }
+        }
+        removalMenu = null
+        removalMenuParams = null
+    }
+
+    private fun updateKeepScreenOn(active: Boolean) {
+        val params = layoutParams ?: return
+        val view = bubble ?: return
+        params.flags = if (active) {
+            params.flags or WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+        } else {
+            params.flags and WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON.inv()
+        }
+        windowManager.updateViewLayout(view, params)
     }
 
     private fun createNotificationChannel() {
@@ -164,6 +248,7 @@ class FloatingOverlayService : Service() {
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     override fun onDestroy() {
+        hideRemovalMenu()
         bubble?.let { view ->
             try {
                 windowManager.removeView(view)
@@ -177,6 +262,7 @@ class FloatingOverlayService : Service() {
         isRunning = false
         stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
+        OpenFlowEngine.destroyIfDetached()
     }
 
     companion object {
@@ -193,6 +279,7 @@ class FloatingOverlayService : Service() {
         @Volatile
         private var instance: FloatingOverlayService? = null
         private var pendingState: OverlaySnapshot? = null
+        private var pendingKeepScreenOn = false
 
         fun start(context: Context) {
             val intent = Intent(context, FloatingOverlayService::class.java)
@@ -216,6 +303,11 @@ class FloatingOverlayService : Service() {
         fun showError() {
             instance?.bubble?.showError()
         }
+
+        fun setKeepScreenOn(active: Boolean) {
+            pendingKeepScreenOn = active
+            instance?.updateKeepScreenOn(active)
+        }
     }
 }
 
@@ -230,6 +322,7 @@ private class FloatingWaveView(
     private val onMove: (Int, Int) -> Unit,
     private val onMoveFinished: () -> Unit,
     private val onAction: (String) -> Unit,
+    private val onLongPress: () -> Unit,
 ) : View(context) {
     private val density = resources.displayMetrics.density
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
@@ -250,6 +343,7 @@ private class FloatingWaveView(
     private var lastRawX = 0f
     private var lastRawY = 0f
     private var dragged = false
+    private var pressed = false
 
     private val gestures = GestureDetector(
         context,
@@ -265,12 +359,18 @@ private class FloatingWaveView(
                 if (!dragged && visualState == "recording") onAction("cancel")
                 return true
             }
+
+            override fun onLongPress(event: MotionEvent) {
+                if (!dragged && visualState == "idle") {
+                    performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                    onLongPress()
+                }
+            }
         },
     )
 
     init {
         contentDescription = "Controle flutuante do OpenFlow"
-        setLayerType(LAYER_TYPE_SOFTWARE, null)
     }
 
     fun update(state: String, newLevel: Double, bands: DoubleArray) {
@@ -295,6 +395,8 @@ private class FloatingWaveView(
                 lastRawX = event.rawX
                 lastRawY = event.rawY
                 dragged = false
+                pressed = true
+                postInvalidateOnAnimation()
             }
             MotionEvent.ACTION_MOVE -> {
                 if (!dragged &&
@@ -304,12 +406,17 @@ private class FloatingWaveView(
                     dragged = true
                 }
                 if (dragged) {
+                    pressed = false
                     onMove((event.rawX - lastRawX).toInt(), (event.rawY - lastRawY).toInt())
                     lastRawX = event.rawX
                     lastRawY = event.rawY
                 }
             }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> if (dragged) onMoveFinished()
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                pressed = false
+                if (dragged) onMoveFinished()
+                postInvalidateOnAnimation()
+            }
         }
         gestures.onTouchEvent(event)
         return true
@@ -323,12 +430,12 @@ private class FloatingWaveView(
         }
         val centerX = width / 2f
         val centerY = height / 2f
+        canvas.save()
+        if (pressed) canvas.scale(0.94f, 0.94f, centerX, centerY)
         val radius = min(width, height) / 2f - 3f * density
         paint.style = Paint.Style.FILL
         paint.color = Color.rgb(17, 17, 16)
-        paint.setShadowLayer(8f * density, 0f, 2f * density, 0x66000000)
         canvas.drawCircle(centerX, centerY, radius, paint)
-        paint.clearShadowLayer()
 
         val now = System.currentTimeMillis()
         val ringColor = when {
@@ -345,12 +452,13 @@ private class FloatingWaveView(
             now < errorUntil -> drawError(canvas, centerX, centerY)
             visualState == "recording" -> drawRecording(canvas, centerX, centerY)
             visualState == "transcribing" -> drawLoading(canvas, centerX, centerY)
-            else -> drawIdle(canvas)
+            else -> drawIdle(canvas, centerX, centerY)
         }
+        canvas.restore()
         if (visualState != "idle" || now < errorUntil) postInvalidateOnAnimation()
     }
 
-    private fun drawIdle(canvas: Canvas) {
+    private fun drawIdle(canvas: Canvas, centerX: Float, centerY: Float) {
         val path = Path().apply {
             moveTo(14f * density, 32f * density)
             lineTo(21f * density, 32f * density)
@@ -361,6 +469,9 @@ private class FloatingWaveView(
             lineTo(49f * density, 29f * density)
             lineTo(53f * density, 29f * density)
         }
+        val bounds = RectF()
+        path.computeBounds(bounds, true)
+        path.offset(centerX - bounds.centerX(), centerY - bounds.centerY())
         stroke.color = Color.WHITE
         stroke.strokeWidth = 3.6f * density
         canvas.drawPath(path, stroke)
@@ -411,5 +522,75 @@ private class FloatingWaveView(
             paint,
         )
         canvas.drawCircle(centerX, centerY + 10f * density, 2.2f * density, paint)
+    }
+}
+
+private class RemovalMenuView(
+    context: Context,
+    private val onRemove: () -> Unit,
+) : View(context) {
+    private val density = resources.displayMetrics.density
+    private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(32, 32, 29)
+        setShadowLayer(10f * density, 0f, 3f * density, 0x77000000)
+    }
+    private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = density
+        color = Color.rgb(79, 79, 72)
+    }
+    private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(248, 113, 113)
+        textSize = 14f * density
+        typeface = android.graphics.Typeface.create(
+            android.graphics.Typeface.DEFAULT,
+            android.graphics.Typeface.BOLD,
+        )
+        textAlign = Paint.Align.CENTER
+    }
+
+    init {
+        contentDescription = "Remover círculo flutuante até abrir o OpenFlow novamente"
+        isClickable = true
+        isFocusable = true
+        setLayerType(LAYER_TYPE_SOFTWARE, null)
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        val inset = 3f * density
+        val bounds = RectF(inset, inset, width - inset, height - inset)
+        val radius = 13f * density
+        canvas.drawRoundRect(bounds, radius, radius, backgroundPaint)
+        canvas.drawRoundRect(bounds, radius, radius, borderPaint)
+        val baseline = height / 2f - (textPaint.descent() + textPaint.ascent()) / 2f
+        canvas.drawText("Remover", width / 2f, baseline, textPaint)
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                alpha = 0.72f
+                return true
+            }
+            MotionEvent.ACTION_UP -> {
+                alpha = 1f
+                if (event.x in 0f..width.toFloat() && event.y in 0f..height.toFloat()) {
+                    performClick()
+                }
+                return true
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                alpha = 1f
+                return true
+            }
+        }
+        return super.onTouchEvent(event)
+    }
+
+    override fun performClick(): Boolean {
+        super.performClick()
+        onRemove()
+        return true
     }
 }

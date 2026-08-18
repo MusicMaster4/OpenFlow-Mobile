@@ -47,6 +47,26 @@ void main() {
         find.byType(HomeScreen),
         matchesGoldenFile('goldens/openflow_home.png'),
       );
+
+      await tester.tap(find.byTooltip('Estatísticas'));
+      await tester.pumpAndSettle();
+      expect(find.text('Seu ritmo no OpenFlow'), findsOneWidget);
+      expect(find.text('ÚLTIMOS 7 DIAS'), findsOneWidget);
+      expect(find.text('VISÃO GERAL'), findsOneWidget);
+
+      await tester.pageBack();
+      await tester.pump(const Duration(seconds: 1));
+      await tester.tap(find.byTooltip('Configurações'));
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text('Configurações'), findsOneWidget);
+      for (var step = 0; step < 2; step++) {
+        await tester.dragFrom(const Offset(206, 700), const Offset(0, -600));
+        await tester.pump(const Duration(milliseconds: 250));
+      }
+      expect(find.text('SOBRE E ATUALIZAÇÕES'), findsOneWidget);
+      expect(find.text('OpenFlow Mobile'), findsOneWidget);
+      expect(find.text('STABLE'), findsOneWidget);
+      expect(find.text('Verificar atualizações'), findsOneWidget);
     },
   );
 }

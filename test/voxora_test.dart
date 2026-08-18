@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:voxora/src/models/transcript_entry.dart';
+import 'package:voxora/src/models/usage_stats.dart';
 import 'package:voxora/src/services/openrouter_service.dart';
 
 void main() {
@@ -53,5 +54,42 @@ void main() {
         ),
       ),
     );
+  });
+
+  test('usage stats preserve desktop metrics and daily totals', () {
+    final entries = [
+      TranscriptEntry(
+        id: '1',
+        text: 'um dois três quatro',
+        createdAt: DateTime(2026, 8, 17, 10),
+        source: 'Gravação',
+        model: OpenRouterService.model,
+        durationMs: 2000,
+        transcriptionMs: 500,
+        costUsd: 0.001,
+      ),
+      TranscriptEntry(
+        id: '2',
+        text: 'cinco seis',
+        createdAt: DateTime(2026, 8, 18, 10),
+        source: 'Gravação',
+        model: OpenRouterService.model,
+        durationMs: 1000,
+        transcriptionMs: 700,
+        costUsd: 0.002,
+      ),
+    ];
+
+    final stats = UsageStats.fromHistory(entries);
+    final restored = UsageStats.fromJson(stats.toJson());
+
+    expect(restored.totalTranscriptions, 2);
+    expect(restored.totalWords, 6);
+    expect(restored.totalDays, 2);
+    expect(restored.streakDays, 2);
+    expect(restored.averageWpm, 120);
+    expect(restored.averageTranscriptionMs, 600);
+    expect(restored.totalCostUsd, closeTo(0.003, 0.000001));
+    expect(restored.dailyWords['2026-08-18'], 2);
   });
 }

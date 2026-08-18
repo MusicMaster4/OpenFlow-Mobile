@@ -44,6 +44,12 @@ class FloatingOverlayService {
     return await _channel.invokeMethod<bool>('isOverlayRunning') ?? false;
   }
 
+  Future<bool> hasRecordAudioPermission() async {
+    if (!Platform.isAndroid) return false;
+    return await _channel.invokeMethod<bool>('hasRecordAudioPermission') ??
+        false;
+  }
+
   Future<bool> isAccessibilityEnabled() async {
     if (!Platform.isAndroid) return false;
     return await _channel.invokeMethod<bool>('isAccessibilityEnabled') ?? false;
@@ -54,9 +60,47 @@ class FloatingOverlayService {
     await _channel.invokeMethod<void>('openAccessibilitySettings');
   }
 
+  Future<void> openAppDetailsSettings() async {
+    if (!Platform.isAndroid) return;
+    await _channel.invokeMethod<void>('openAppDetailsSettings');
+  }
+
+  Future<bool> hasNotificationPolicyAccess() async {
+    if (!Platform.isAndroid) return false;
+    return await _channel.invokeMethod<bool>('hasNotificationPolicyAccess') ??
+        false;
+  }
+
+  Future<void> openNotificationPolicySettings() async {
+    if (!Platform.isAndroid) return;
+    await _channel.invokeMethod<void>('openNotificationPolicySettings');
+  }
+
+  Future<void> setRecordingActive({
+    required bool active,
+    required bool silence,
+  }) async {
+    if (!Platform.isAndroid) return;
+    await _channel.invokeMethod<void>('setRecordingActive', {
+      'active': active,
+      'silence': silence,
+    });
+  }
+
+  Future<void> playFeedback(String sound) async {
+    if (!Platform.isAndroid) return;
+    await _channel.invokeMethod<void>('playFeedback', {'sound': sound});
+  }
+
   Future<bool> pasteText(String text) async {
     if (!Platform.isAndroid) return false;
     return await _channel.invokeMethod<bool>('pasteText', {'text': text}) ??
+        false;
+  }
+
+  Future<bool> copyText(String text) async {
+    if (!Platform.isAndroid) return false;
+    return await _channel.invokeMethod<bool>('copyText', {'text': text}) ??
         false;
   }
 

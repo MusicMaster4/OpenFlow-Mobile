@@ -4,6 +4,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/transcript_entry.dart';
+import '../models/usage_stats.dart';
 
 class LocalStorageService {
   static const _historyKey = 'voxora.history.v1';
@@ -11,6 +12,9 @@ class LocalStorageService {
   static const _languageKey = 'voxora.languageHint';
   static const _floatingOverlayKey = 'openflow.floatingOverlay';
   static const _autoPasteKey = 'openflow.autoPaste';
+  static const _soundEffectsKey = 'openflow.soundEffects';
+  static const _silenceWhileRecordingKey = 'openflow.silenceWhileRecording';
+  static const _usageStatsKey = 'openflow.usageStats.v1';
   static const _apiKeyKey = 'openrouter.apiKey';
 
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage(
@@ -84,6 +88,44 @@ class LocalStorageService {
   Future<void> saveAutoPaste(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_autoPasteKey, value);
+  }
+
+  Future<bool> loadSoundEffects() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_soundEffectsKey) ?? true;
+  }
+
+  Future<void> saveSoundEffects(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_soundEffectsKey, value);
+  }
+
+  Future<bool> loadSilenceWhileRecording() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_silenceWhileRecordingKey) ?? true;
+  }
+
+  Future<void> saveSilenceWhileRecording(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_silenceWhileRecordingKey, value);
+  }
+
+  Future<UsageStats?> loadUsageStats() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_usageStatsKey);
+      if (raw == null || raw.isEmpty) return null;
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return null;
+      return UsageStats.fromJson(Map<String, dynamic>.from(decoded));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> saveUsageStats(UsageStats stats) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_usageStatsKey, jsonEncode(stats.toJson()));
   }
 
   Future<String?> readApiKey() async {

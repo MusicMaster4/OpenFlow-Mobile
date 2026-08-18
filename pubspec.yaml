@@ -73,6 +73,8 @@ flutter_launcher_icons:
   image_path: assets/icon/openflow_icon.png
   adaptive_icon_background: "#FFFFFF"
   adaptive_icon_foreground: assets/icon/openflow_foreground.png
+  adaptive_icon_foreground_inset: 0
+  adaptive_icon_monochrome: assets/icon/openflow_foreground.png
   min_sdk_android: 24
 
   # To add assets to your application, add an assets section, like this:

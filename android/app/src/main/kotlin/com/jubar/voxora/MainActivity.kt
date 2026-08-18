@@ -1,80 +1,38 @@
 package com.jubar.voxora
 
-import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.net.Uri
 import android.os.Build
-import android.provider.Settings
-import android.view.accessibility.AccessibilityManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 class MainActivity : FlutterActivity() {
     private var overlayChannel: MethodChannel? = null
     private var overlayReceiver: BroadcastReceiver? = null
+    private var updateChannel: MethodChannel? = null
+    private var updateExecutor: ExecutorService? = null
+    private lateinit var appUpdater: AppUpdater
+
+    override fun provideFlutterEngine(context: Context): FlutterEngine? =
+        OpenFlowEngine.cached()
+
+    override fun shouldDestroyEngineWithHost(): Boolean = false
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        overlayChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL_NAME)
-        overlayChannel?.setMethodCallHandler { call, result ->
-            try {
-                when (call.method) {
-                    "isOverlayGranted" -> result.success(Settings.canDrawOverlays(this))
-                    "requestOverlayPermission" -> {
-                        startActivity(
-                            Intent(
-                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                Uri.parse("package:$packageName"),
-                            ),
-                        )
-                        result.success(null)
-                    }
-                    "startOverlay" -> {
-                        if (!Settings.canDrawOverlays(this)) {
-                            result.success(false)
-                        } else {
-                            FloatingOverlayService.start(this)
-                            result.success(true)
-                        }
-                    }
-                    "stopOverlay" -> {
-                        FloatingOverlayService.stop(this)
-                        result.success(null)
-                    }
-                    "isOverlayRunning" -> result.success(FloatingOverlayService.isRunning)
-                    "isAccessibilityEnabled" -> result.success(isOpenFlowAccessibilityEnabled())
-                    "openAccessibilitySettings" -> {
-                        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                        result.success(null)
-                    }
-                    "pasteText" -> {
-                        val text = call.argument<String>("text").orEmpty()
-                        result.success(OpenFlowAccessibilityService.pasteText(text))
-                    }
-                    "updateOverlay" -> {
-                        val state = call.argument<String>("state") ?: "idle"
-                        val level = call.argument<Number>("level")?.toDouble() ?: 0.0
-                        val bands = call.argument<List<Number>>("bands")
-                            ?.map { it.toDouble() }
-                            ?.toDoubleArray()
-                            ?: DoubleArray(11)
-                        FloatingOverlayService.update(state, level, bands)
-                        result.success(null)
-                    }
-                    "showOverlayError" -> {
-                        FloatingOverlayService.showError()
-                        result.success(null)
-                    }
-                    else -> result.notImplemented()
-                }
-            } catch (error: Throwable) {
-                result.error("openflow_overlay", error.message, null)
-            }
-        }
+        OpenFlowEngine.attach(this, flutterEngine)
+        OpenFlowFeedback.initialize(applicationContext)
+        RecordingAudioSilencer.recoverOnce(applicationContext)
+        configureUpdateChannel(flutterEngine)
+        overlayChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            OpenFlowEngine.OVERLAY_CHANNEL,
+        )
 
         overlayReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
@@ -91,15 +49,95 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun isOpenFlowAccessibilityEnabled(): Boolean {
-        val manager = getSystemService(ACCESSIBILITY_SERVICE) as AccessibilityManager
-        return manager
-            .getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
-            .any { info ->
-                val serviceName = info.resolveInfo.serviceInfo.name
-                serviceName == OpenFlowAccessibilityService::class.java.name ||
-                    serviceName.endsWith(".OpenFlowAccessibilityService")
+    private fun configureUpdateChannel(flutterEngine: FlutterEngine) {
+        appUpdater = AppUpdater(applicationContext)
+        appUpdater.clearIfInstalled(installedVersionCode())
+        updateExecutor = Executors.newSingleThreadExecutor()
+        updateChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            UPDATE_CHANNEL_NAME,
+        )
+        updateChannel?.setMethodCallHandler { call, result ->
+            try {
+                when (call.method) {
+                    "getAppInfo" -> result.success(appInfo())
+                    "checkForUpdate" -> runUpdateTask(result) {
+                        val manifest = UpdateClient.fetch(BuildConfig.UPDATE_CHANNEL)
+                        if (manifest.isNewerThan(installedVersionCode())) manifest.toMap() else null
+                    }
+                    "downloadUpdate" -> {
+                        val raw = call.arguments as? Map<*, *>
+                            ?: error("The update details are missing.")
+                        val manifest = AndroidUpdateManifest.fromMap(raw)
+                        require(manifest.channel == BuildConfig.UPDATE_CHANNEL) {
+                            "The update belongs to a different channel."
+                        }
+                        require(manifest.isNewerThan(installedVersionCode())) {
+                            "This update is not newer than the installed app."
+                        }
+                        runUpdateTask(result) {
+                            appUpdater.download(manifest) { received, total ->
+                                runOnUiThread {
+                                    updateChannel?.invokeMethod(
+                                        "downloadProgress",
+                                        mapOf("received" to received, "total" to total),
+                                    )
+                                }
+                            }
+                            manifest.toMap()
+                        }
+                    }
+                    "installDownloadedUpdate" -> {
+                        val pending = appUpdater.pendingManifest()
+                            ?: error("No verified update is ready.")
+                        require(pending.channel == BuildConfig.UPDATE_CHANNEL) {
+                            "The downloaded update belongs to a different channel."
+                        }
+                        if (!appUpdater.canInstallPackages()) {
+                            startActivity(appUpdater.requestInstallPermission())
+                            result.success(mapOf("permissionRequired" to true))
+                        } else {
+                            appUpdater.installVerified()
+                            result.success(mapOf("permissionRequired" to false))
+                        }
+                    }
+                    "hasInstallPermission" -> result.success(appUpdater.canInstallPackages())
+                    else -> result.notImplemented()
+                }
+            } catch (error: Throwable) {
+                result.error("openflow_update", error.message ?: "Update failed.", null)
             }
+        }
+    }
+
+    private fun appInfo(): Map<String, Any> = mapOf(
+        "versionName" to BuildConfig.VERSION_NAME,
+        "versionCode" to installedVersionCode(),
+        "channel" to BuildConfig.UPDATE_CHANNEL,
+    )
+
+    @Suppress("DEPRECATION")
+    private fun installedVersionCode(): Long {
+        val info = packageManager.getPackageInfo(packageName, 0)
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            info.longVersionCode
+        } else {
+            info.versionCode.toLong()
+        }
+    }
+
+    private fun runUpdateTask(result: MethodChannel.Result, task: () -> Any?) {
+        val executor = updateExecutor ?: error("The update service is unavailable.")
+        executor.execute {
+            try {
+                val value = task()
+                runOnUiThread { result.success(value) }
+            } catch (error: Throwable) {
+                runOnUiThread {
+                    result.error("openflow_update", error.message ?: "Update failed.", null)
+                }
+            }
+        }
     }
 
     override fun onDestroy() {
@@ -112,10 +150,18 @@ class MainActivity : FlutterActivity() {
         }
         overlayReceiver = null
         overlayChannel = null
+        updateChannel?.setMethodCallHandler(null)
+        updateChannel = null
+        updateExecutor?.shutdownNow()
+        updateExecutor = null
+        OpenFlowEngine.detach(this)
         super.onDestroy()
+        if (!FloatingOverlayService.isRunning) {
+            OpenFlowEngine.destroyIfDetached()
+        }
     }
 
     companion object {
-        private const val CHANNEL_NAME = "openflow/overlay"
+        private const val UPDATE_CHANNEL_NAME = "openflow/update"
     }
 }

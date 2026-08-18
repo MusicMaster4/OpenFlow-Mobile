@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../models/transcript_entry.dart';
+import '../models/usage_stats.dart';
+import '../services/app_update_service.dart';
 import '../services/floating_overlay_service.dart';
 import '../services/local_storage_service.dart';
 import '../services/openrouter_service.dart';
@@ -19,15 +21,18 @@ class VoxoraController extends ChangeNotifier {
     required OpenRouterService openRouter,
     required RecordingService recording,
     required FloatingOverlayService floatingOverlay,
+    AppUpdateService? updates,
   }) : _storage = storage,
        _openRouter = openRouter,
        _recording = recording,
-       _floatingOverlay = floatingOverlay;
+       _floatingOverlay = floatingOverlay,
+       updates = updates ?? AppUpdateService();
 
   final LocalStorageService _storage;
   final OpenRouterService _openRouter;
   final RecordingService _recording;
   final FloatingOverlayService _floatingOverlay;
+  final AppUpdateService updates;
 
   final List<TranscriptEntry> _history = [];
   String? _apiKey;
@@ -37,6 +42,7 @@ class VoxoraController extends ChangeNotifier {
   DateTime? _recordingStartedAt;
   bool _pendingOverlayEnable = false;
   bool _recordingFromOverlay = false;
+  UsageStats _usageStats = const UsageStats();
 
   VoxoraActivity activity = VoxoraActivity.idle;
   bool autoCopy = true;
@@ -44,6 +50,9 @@ class VoxoraController extends ChangeNotifier {
   bool floatingOverlayEnabled = false;
   bool overlayPermissionGranted = false;
   bool accessibilityEnabled = false;
+  bool notificationPolicyAccessGranted = false;
+  bool soundEffectsEnabled = true;
+  bool silenceWhileRecording = true;
   String languageHint = 'auto';
   int recordingDurationMs = 0;
   double amplitude = 0;
@@ -54,6 +63,7 @@ class VoxoraController extends ChangeNotifier {
   int feedbackSerial = 0;
 
   List<TranscriptEntry> get history => List.unmodifiable(_history);
+  UsageStats get usageStats => _usageStats;
   TranscriptEntry? get latest => _history.isEmpty ? null : _history.first;
   bool get hasApiKey => _apiKey?.isNotEmpty ?? false;
   bool get isRecording => activity == VoxoraActivity.recording;
@@ -62,6 +72,7 @@ class VoxoraController extends ChangeNotifier {
 
   Future<void> initialize() async {
     await _floatingOverlay.initialize(_handleOverlayAction);
+    await updates.initialize();
     final values = await Future.wait<Object?>([
       _storage.loadHistory(),
       _storage.loadAutoCopy(),
@@ -69,6 +80,9 @@ class VoxoraController extends ChangeNotifier {
       _storage.readApiKey(),
       _storage.loadFloatingOverlay(),
       _storage.loadAutoPaste(),
+      _storage.loadSoundEffects(),
+      _storage.loadSilenceWhileRecording(),
+      _storage.loadUsageStats(),
     ]);
     _history
       ..clear()
@@ -77,8 +91,16 @@ class VoxoraController extends ChangeNotifier {
     languageHint = values[2] as String;
     _apiKey = (values[3] as String?)?.trim();
     autoPaste = values[5] as bool;
+    soundEffectsEnabled = values[6] as bool;
+    silenceWhileRecording = values[7] as bool;
+    _usageStats = values[8] as UsageStats? ?? UsageStats.fromHistory(_history);
+    if (values[8] == null && _history.isNotEmpty) {
+      await _storage.saveUsageStats(_usageStats);
+    }
     overlayPermissionGranted = await _floatingOverlay.canDrawOverlays();
     accessibilityEnabled = await _floatingOverlay.isAccessibilityEnabled();
+    notificationPolicyAccessGranted = await _floatingOverlay
+        .hasNotificationPolicyAccess();
 
     final shouldRunOverlay = values[4] as bool;
     if (shouldRunOverlay && overlayPermissionGranted) {
@@ -173,18 +195,45 @@ class VoxoraController extends ChangeNotifier {
     if (value) {
       accessibilityEnabled = await _floatingOverlay.isAccessibilityEnabled();
       if (!accessibilityEnabled) {
-        await _floatingOverlay.openAccessibilitySettings();
-        _setFeedback(
-          'Ative o serviço OpenFlow para colar no campo selecionado.',
-        );
+        _setFeedback('Conclua os dois passos exibidos para liberar a colagem.');
       }
     }
     notifyListeners();
   }
 
+  Future<void> openAppDetailsSettings() =>
+      _floatingOverlay.openAppDetailsSettings();
+
+  Future<void> openAccessibilitySettings() =>
+      _floatingOverlay.openAccessibilitySettings();
+
+  Future<void> openNotificationPolicySettings() =>
+      _floatingOverlay.openNotificationPolicySettings();
+
+  Future<void> setSoundEffectsEnabled(bool value) async {
+    soundEffectsEnabled = value;
+    notifyListeners();
+    await _storage.saveSoundEffects(value);
+    if (value) await _floatingOverlay.playFeedback('loaded');
+  }
+
+  Future<void> setSilenceWhileRecording(bool value) async {
+    silenceWhileRecording = value;
+    notifyListeners();
+    await _storage.saveSilenceWhileRecording(value);
+    if (isRecording) {
+      await _floatingOverlay.setRecordingActive(
+        active: true,
+        silence: silenceWhileRecording,
+      );
+    }
+  }
+
   Future<void> refreshSystemIntegrations() async {
     overlayPermissionGranted = await _floatingOverlay.canDrawOverlays();
     accessibilityEnabled = await _floatingOverlay.isAccessibilityEnabled();
+    notificationPolicyAccessGranted = await _floatingOverlay
+        .hasNotificationPolicyAccess();
     if (_pendingOverlayEnable && overlayPermissionGranted) {
       _pendingOverlayEnable = false;
       floatingOverlayEnabled = await _floatingOverlay.start();
@@ -195,7 +244,15 @@ class VoxoraController extends ChangeNotifier {
       }
     } else {
       floatingOverlayEnabled = await _floatingOverlay.isRunning();
+      final shouldRunOverlay = await _storage.loadFloatingOverlay();
+      if (shouldRunOverlay &&
+          overlayPermissionGranted &&
+          !floatingOverlayEnabled) {
+        floatingOverlayEnabled = await _floatingOverlay.start();
+        if (floatingOverlayEnabled) await _syncOverlay();
+      }
     }
+    await updates.onAppResumed();
     notifyListeners();
   }
 
@@ -207,7 +264,9 @@ class VoxoraController extends ChangeNotifier {
     }
 
     try {
-      final allowed = await _recording.requestPermission();
+      final allowed = fromOverlay
+          ? await _floatingOverlay.hasRecordAudioPermission()
+          : await _recording.requestPermission();
       if (!allowed) {
         _setFeedback(
           'Autorize o acesso ao microfone para começar a gravar.',
@@ -225,6 +284,13 @@ class VoxoraController extends ChangeNotifier {
       activity = VoxoraActivity.recording;
       activeSource = 'Gravação';
       _recordingFromOverlay = fromOverlay;
+      if (soundEffectsEnabled) {
+        await _floatingOverlay.playFeedback('start');
+      }
+      await _floatingOverlay.setRecordingActive(
+        active: true,
+        silence: silenceWhileRecording,
+      );
       _recordingTimer?.cancel();
       _recordingTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
         final startedAt = _recordingStartedAt;
@@ -246,6 +312,7 @@ class VoxoraController extends ChangeNotifier {
       await _syncOverlay();
       notifyListeners();
     } catch (error) {
+      await _floatingOverlay.setRecordingActive(active: false, silence: false);
       _resetRecordingState();
       if (fromOverlay) await _floatingOverlay.showError();
       _setFeedback(
@@ -263,6 +330,10 @@ class VoxoraController extends ChangeNotifier {
 
     try {
       final stoppedPath = await _recording.stop();
+      await _floatingOverlay.setRecordingActive(active: false, silence: false);
+      if (soundEffectsEnabled) {
+        await _floatingOverlay.playFeedback('close');
+      }
       await _stopRecordingSignals();
       activity = VoxoraActivity.transcribing;
       activeSource = 'Gravação';
@@ -297,6 +368,7 @@ class VoxoraController extends ChangeNotifier {
       }
       _resetRecordingState();
       _recordingFromOverlay = false;
+      await _floatingOverlay.setRecordingActive(active: false, silence: false);
       await _syncOverlay();
       notifyListeners();
     }
@@ -305,6 +377,10 @@ class VoxoraController extends ChangeNotifier {
   Future<void> cancelRecording() async {
     if (!isRecording) return;
     try {
+      await _floatingOverlay.setRecordingActive(active: false, silence: false);
+      if (soundEffectsEnabled) {
+        await _floatingOverlay.playFeedback('cancel');
+      }
       await _recording.cancel();
       _setFeedback('Gravação cancelada.');
     } catch (_) {
@@ -313,6 +389,7 @@ class VoxoraController extends ChangeNotifier {
       await _stopRecordingSignals();
       _resetRecordingState();
       _recordingFromOverlay = false;
+      await _floatingOverlay.setRecordingActive(active: false, silence: false);
       await _syncOverlay();
       notifyListeners();
     }
@@ -380,9 +457,13 @@ class VoxoraController extends ChangeNotifier {
     _history.insert(0, entry);
     if (_history.length > 100) _history.removeRange(100, _history.length);
     await _storage.saveHistory(_history);
+    _usageStats = _usageStats.add(entry);
+    await _storage.saveUsageStats(_usageStats);
 
-    final copied = autoCopy || _recordingFromOverlay;
-    if (copied) {
+    var copied = autoCopy || _recordingFromOverlay;
+    if (copied && _recordingFromOverlay) {
+      copied = await _floatingOverlay.copyText(entry.text);
+    } else if (copied) {
       await Clipboard.setData(ClipboardData(text: entry.text));
     }
 
@@ -400,6 +481,9 @@ class VoxoraController extends ChangeNotifier {
           ? 'Transcrição pronta e copiada.'
           : 'Transcrição pronta.',
     );
+    if (soundEffectsEnabled) {
+      await _floatingOverlay.playFeedback('loaded');
+    }
   }
 
   Future<void> copyText(String text) async {
@@ -417,6 +501,13 @@ class VoxoraController extends ChangeNotifier {
     _history.clear();
     notifyListeners();
     await _storage.saveHistory(_history);
+  }
+
+  Future<void> resetUsageStats() async {
+    _usageStats = const UsageStats();
+    notifyListeners();
+    await _storage.saveUsageStats(_usageStats);
+    _setFeedback('Estatísticas zeradas.');
   }
 
   bool _ensureApiKey() {
@@ -457,6 +548,10 @@ class VoxoraController extends ChangeNotifier {
         }
       case 'cancel':
         if (isRecording) await cancelRecording();
+      case 'dismiss':
+        floatingOverlayEnabled = false;
+        await _storage.saveFloatingOverlay(false);
+        notifyListeners();
     }
   }
 

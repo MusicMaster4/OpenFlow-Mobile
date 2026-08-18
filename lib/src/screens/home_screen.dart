@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 
 import '../controller/voxora_controller.dart';
 import '../models/transcript_entry.dart';
+import '../services/app_update_service.dart';
 import '../services/openrouter_service.dart';
 import '../theme.dart';
+import 'statistics_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.controller});
@@ -106,10 +108,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  Future<void> _openStatistics() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => StatisticsScreen(controller: widget.controller),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: widget.controller,
+      animation: Listenable.merge([
+        widget.controller,
+        widget.controller.updates,
+      ]),
       builder: (context, _) {
         final controller = widget.controller;
         return Scaffold(
@@ -117,7 +130,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             bottom: false,
             child: Column(
               children: [
-                _Header(onSettings: _openSettings),
+                _Header(
+                  onStatistics: _openStatistics,
+                  onSettings: _openSettings,
+                ),
                 if (!controller.hasApiKey) _ApiKeyNotice(onTap: _openSettings),
                 Expanded(
                   child: LayoutBuilder(
@@ -155,8 +171,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({required this.onSettings});
+  const _Header({required this.onStatistics, required this.onSettings});
 
+  final VoidCallback onStatistics;
   final VoidCallback onSettings;
 
   @override
@@ -195,6 +212,20 @@ class _Header extends StatelessWidget {
               ],
             ),
           ),
+          IconButton(
+            onPressed: onStatistics,
+            tooltip: 'Estatísticas',
+            icon: const Icon(Icons.bar_chart_rounded, size: 20),
+            style: IconButton.styleFrom(
+              foregroundColor: VoxoraColors.text,
+              backgroundColor: VoxoraColors.surface,
+              side: const BorderSide(color: VoxoraColors.border),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          ),
+          const SizedBox(width: 7),
           IconButton(
             onPressed: onSettings,
             tooltip: 'Configurações',
@@ -933,10 +964,71 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                             value: controller.autoPaste,
                             onChanged: controller.setAutoPaste,
                           ),
+                          if (controller.autoPaste &&
+                              !controller.accessibilityEnabled)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(14, 4, 14, 10),
+                              child: Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: VoxoraColors.warning.withValues(
+                                    alpha: 0.08,
+                                  ),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: VoxoraColors.warning.withValues(
+                                      alpha: 0.32,
+                                    ),
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Libere a configuração restrita',
+                                      style: TextStyle(
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 5),
+                                    const Text(
+                                      '1. Nos detalhes do app, abra o menu ⋮ e toque em “Permitir configurações restritas”.\n2. Volte e ative “OpenFlow — colar transcrição” em Acessibilidade.',
+                                      style: TextStyle(
+                                        color: VoxoraColors.mutedStrong,
+                                        fontSize: 11.5,
+                                        height: 1.4,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: OutlinedButton(
+                                            onPressed: controller
+                                                .openAppDetailsSettings,
+                                            child: const Text('1. Liberar'),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: FilledButton.tonal(
+                                            onPressed: controller
+                                                .openAccessibilitySettings,
+                                            child: const Text('2. Ativar'),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
                           const Padding(
                             padding: EdgeInsets.fromLTRB(16, 10, 16, 14),
                             child: Text(
-                              'Arraste para mover. Durante a gravação, toque duas vezes para cancelar. O OpenFlow não lê nem armazena o conteúdo da tela.',
+                              'Arraste para mover. Segure quando estiver ocioso para remover até a próxima abertura do app. Durante a gravação, toque duas vezes para cancelar. O OpenFlow não lê nem armazena o conteúdo da tela.',
                               style: TextStyle(
                                 color: VoxoraColors.muted,
                                 fontSize: 11.5,
@@ -944,6 +1036,59 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                               ),
                             ),
                           ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 22),
+                    const _SettingsLabel('ÁUDIO E RESPOSTA'),
+                    const SizedBox(height: 8),
+                    _SettingsPanel(
+                      padding: EdgeInsets.zero,
+                      child: Column(
+                        children: [
+                          _SettingsSwitch(
+                            icon: Icons.volume_up_outlined,
+                            title: 'Sons e vibração',
+                            subtitle:
+                                'Ao iniciar, concluir, cancelar e finalizar',
+                            value: controller.soundEffectsEnabled,
+                            onChanged: controller.setSoundEffectsEnabled,
+                          ),
+                          const Divider(height: 1, indent: 56),
+                          _SettingsSwitch(
+                            icon: Icons.notifications_off_outlined,
+                            title: 'Silenciar durante a gravação',
+                            subtitle: controller.notificationPolicyAccessGranted
+                                ? 'Silêncio total autorizado'
+                                : 'Ativado • autorize para incluir notificações',
+                            value: controller.silenceWhileRecording,
+                            onChanged: controller.setSilenceWhileRecording,
+                          ),
+                          if (controller.silenceWhileRecording &&
+                              !controller.notificationPolicyAccessGranted)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                              child: Row(
+                                children: [
+                                  const Expanded(
+                                    child: Text(
+                                      'Sem este acesso, a mídia é pausada ou silenciada; notificações dependem do Android.',
+                                      style: TextStyle(
+                                        color: VoxoraColors.muted,
+                                        fontSize: 11,
+                                        height: 1.35,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  TextButton(
+                                    onPressed: controller
+                                        .openNotificationPolicySettings,
+                                    child: const Text('Autorizar'),
+                                  ),
+                                ],
+                              ),
+                            ),
                         ],
                       ),
                     ),
@@ -1015,6 +1160,10 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                         ],
                       ),
                     ),
+                    const SizedBox(height: 22),
+                    const _SettingsLabel('SOBRE E ATUALIZAÇÕES'),
+                    const SizedBox(height: 8),
+                    _AboutAndUpdates(updates: controller.updates),
                     if (controller.history.isNotEmpty) ...[
                       const SizedBox(height: 22),
                       const _SettingsLabel('DADOS LOCAIS'),
@@ -1043,15 +1192,6 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                       ),
                     ],
                     const SizedBox(height: 20),
-                    const Center(
-                      child: Text(
-                        'OpenFlow Mobile 2.0  •  ${OpenRouterService.model}',
-                        style: TextStyle(
-                          color: VoxoraColors.muted,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -1059,6 +1199,216 @@ class _SettingsSheetState extends State<_SettingsSheet> {
           ),
         );
       },
+    );
+  }
+}
+
+class _AboutAndUpdates extends StatelessWidget {
+  const _AboutAndUpdates({required this.updates});
+
+  final AppUpdateService updates;
+
+  @override
+  Widget build(BuildContext context) {
+    final build = updates.build;
+    final percent = updates.progress == null
+        ? null
+        : (updates.progress! * 100).round();
+    final status = switch (updates.phase) {
+      AppUpdatePhase.idle =>
+        'Seu histórico, preferências e chave permanecem salvos nas atualizações oficiais.',
+      AppUpdatePhase.checking => 'Consultando o canal ${build.channelLabel}…',
+      AppUpdatePhase.current =>
+        'Você já está na versão mais recente do canal ${build.channelLabel}.',
+      AppUpdatePhase.available =>
+        'OpenFlow ${updates.available!.versionName} está disponível para este canal.',
+      AppUpdatePhase.downloading =>
+        percent == null
+            ? 'Baixando e verificando o APK…'
+            : 'Baixando e verificando o APK… $percent%',
+      AppUpdatePhase.awaitingPermission =>
+        'Autorize esta fonte no Android, volte ao OpenFlow e continue a instalação.',
+      AppUpdatePhase.readyToInstall =>
+        'O APK está verificado e pronto. Toque para abrir o instalador do Android.',
+      AppUpdatePhase.installing =>
+        'O instalador do Android foi aberto. Confirme para concluir.',
+      AppUpdatePhase.failed =>
+        updates.errorMessage ?? 'Não foi possível verificar atualizações.',
+    };
+
+    final (label, icon, action) = switch (updates.phase) {
+      AppUpdatePhase.available => (
+        'Baixar e instalar',
+        Icons.system_update_alt_rounded,
+        updates.downloadAndInstall,
+      ),
+      AppUpdatePhase.awaitingPermission => (
+        'Continuar instalação',
+        Icons.install_mobile_rounded,
+        updates.continueInstallation,
+      ),
+      AppUpdatePhase.readyToInstall => (
+        'Abrir instalador',
+        Icons.install_mobile_rounded,
+        updates.continueInstallation,
+      ),
+      AppUpdatePhase.checking ||
+      AppUpdatePhase.downloading ||
+      AppUpdatePhase.installing => (
+        updates.phase == AppUpdatePhase.checking
+            ? 'Verificando…'
+            : updates.phase == AppUpdatePhase.downloading
+            ? 'Baixando…'
+            : 'Instalando…',
+        Icons.downloading_rounded,
+        null,
+      ),
+      _ => (
+        updates.phase == AppUpdatePhase.current
+            ? 'Verificar novamente'
+            : 'Verificar atualizações',
+        Icons.refresh_rounded,
+        updates.isSupported ? updates.check : null,
+      ),
+    };
+
+    return _SettingsPanel(
+      padding: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: Image.asset(
+                    'assets/icon/openflow_icon.png',
+                    width: 44,
+                    height: 44,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'OpenFlow Mobile',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        'v${build.versionName}  •  ${OpenRouterService.model}',
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: VoxoraColors.muted,
+                          fontSize: 11.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                _ChannelPill(label: build.channelLabel),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 13, 14, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  build.channel == 'testing'
+                      ? 'Este APK recebe somente versões beta da branch testing. Releases stable nunca são oferecidos aqui.'
+                      : 'Este APK recebe somente versões stable da branch main. Releases beta nunca são oferecidos aqui.',
+                  style: const TextStyle(
+                    color: VoxoraColors.mutedStrong,
+                    fontSize: 12,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 160),
+                  child: Text(
+                    status,
+                    key: ValueKey(updates.phase),
+                    style: TextStyle(
+                      color: updates.phase == AppUpdatePhase.failed
+                          ? VoxoraColors.danger
+                          : VoxoraColors.muted,
+                      fontSize: 11.5,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+                if (updates.phase == AppUpdatePhase.downloading) ...[
+                  const SizedBox(height: 10),
+                  LinearProgressIndicator(
+                    value: updates.progress,
+                    minHeight: 3,
+                    borderRadius: BorderRadius.circular(99),
+                    backgroundColor: VoxoraColors.border,
+                    color: VoxoraColors.accent,
+                  ),
+                ],
+                const SizedBox(height: 12),
+                FilledButton.icon(
+                  onPressed: action,
+                  icon: updates.isBusy
+                      ? const SizedBox.square(
+                          dimension: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(icon, size: 18),
+                  label: Text(label),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: VoxoraColors.text,
+                    foregroundColor: const Color(0xFF111110),
+                    disabledBackgroundColor: VoxoraColors.surfaceRaised,
+                    disabledForegroundColor: VoxoraColors.muted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChannelPill extends StatelessWidget {
+  const _ChannelPill({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final beta = label == 'beta';
+    final color = beta ? VoxoraColors.warning : VoxoraColors.accent;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(99),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Text(
+        label.toUpperCase(),
+        style: TextStyle(
+          color: color,
+          fontSize: 9.5,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.65,
+        ),
+      ),
     );
   }
 }
