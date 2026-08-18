@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">OpenFlow</string>
+    <string name="openflow_accessibility_description">Permite que o OpenFlow cole a transcrição no campo de texto que já está selecionado. O serviço não lê nem armazena o conteúdo da tela.</string>
+</resources>
