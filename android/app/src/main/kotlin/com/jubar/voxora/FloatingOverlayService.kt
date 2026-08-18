@@ -14,6 +14,7 @@ import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.IBinder
+import android.os.SystemClock
 import android.provider.Settings
 import android.view.GestureDetector
 import android.view.Gravity
@@ -24,6 +25,7 @@ import android.view.ViewConfiguration
 import android.view.WindowManager
 import androidx.core.content.ContextCompat
 import kotlin.math.abs
+import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
@@ -69,7 +71,7 @@ class FloatingOverlayService : Service() {
     private fun showBubble() {
         if (bubble != null) return
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-        val size = dp(64)
+        val size = dp(58)
         val preferences = getSharedPreferences("openflow_overlay", Context.MODE_PRIVATE)
         layoutParams = WindowManager.LayoutParams(
             size,
@@ -173,7 +175,9 @@ class FloatingOverlayService : Service() {
         ).apply {
             gravity = Gravity.TOP or Gravity.START
             x = (displayWidth - size) / 2
-            y = max(dp(12), displayHeight - size - dp(24))
+            // Keep the target clear of Android's gesture/three-button navigation.
+            // This places it visually above Home instead of on top of the system bar.
+            y = max(dp(12), displayHeight - size - navigationBarHeight() - dp(16))
         }
         removalTarget = RemovalTargetView(this)
         windowManager.addView(removalTarget, removalTargetParams)
@@ -261,6 +265,11 @@ class FloatingOverlayService : Service() {
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private fun navigationBarHeight(): Int {
+        val resourceId = resources.getIdentifier("navigation_bar_height", "dimen", "android")
+        return if (resourceId > 0) resources.getDimensionPixelSize(resourceId) else dp(48)
+    }
 
     override fun onDestroy() {
         hideRemovalTarget()
@@ -352,7 +361,10 @@ private class FloatingWaveView(
     private val currentBands = DoubleArray(11)
     private var visualState = "idle"
     private var level = 0.0
-    private var phase = 0.0
+    private var displayedLevel = 0f
+    private val animationStartedAt = SystemClock.uptimeMillis()
+    private var lastFrameAt = animationStartedAt
+    private var stateChangedAt = animationStartedAt
     private var errorUntil = 0L
     private var downRawX = 0f
     private var downRawY = 0f
@@ -384,6 +396,9 @@ private class FloatingWaveView(
     }
 
     fun update(state: String, newLevel: Double, bands: DoubleArray) {
+        if (state != visualState) {
+            stateChangedAt = SystemClock.uptimeMillis()
+        }
         visualState = state
         level = newLevel.coerceIn(0.0, 1.0)
         for (index in targetBands.indices) {
@@ -393,7 +408,7 @@ private class FloatingWaveView(
     }
 
     fun showError() {
-        errorUntil = System.currentTimeMillis() + 900
+        errorUntil = SystemClock.uptimeMillis() + 900
         postInvalidateOnAnimation()
     }
 
@@ -436,20 +451,28 @@ private class FloatingWaveView(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        phase += 0.075
+        val now = SystemClock.uptimeMillis()
+        val deltaSeconds = ((now - lastFrameAt).coerceIn(1L, 48L) / 1000f)
+        lastFrameAt = now
+        val smoothing = 1f - exp((-deltaSeconds * 12f).toDouble()).toFloat()
         for (index in currentBands.indices) {
-            currentBands[index] += (targetBands[index] - currentBands[index]) * 0.32
+            currentBands[index] += (targetBands[index] - currentBands[index]) * smoothing
         }
+        displayedLevel += (level.toFloat() - displayedLevel) * smoothing
+        val phase = (now - animationStartedAt) / 1000.0
+        val stateProgress = ((now - stateChangedAt) / 240f).coerceIn(0f, 1f)
+        val stateEase = 1f - (1f - stateProgress) * (1f - stateProgress) * (1f - stateProgress)
         val centerX = width / 2f
         val centerY = height / 2f
         canvas.save()
-        if (pressed) canvas.scale(0.94f, 0.94f, centerX, centerY)
+        val pressScale = if (pressed) 0.94f else 1f
+        canvas.scale(pressScale, pressScale, centerX, centerY)
         val radius = min(width, height) / 2f - 3f * density
         paint.style = Paint.Style.FILL
         paint.color = Color.rgb(17, 17, 16)
+        paint.alpha = 255
         canvas.drawCircle(centerX, centerY, radius, paint)
 
-        val now = System.currentTimeMillis()
         val ringColor = when {
             now < errorUntil -> Color.rgb(239, 68, 68)
             visualState == "recording" -> Color.rgb(16, 185, 129)
@@ -457,22 +480,38 @@ private class FloatingWaveView(
             else -> Color.rgb(69, 69, 63)
         }
         stroke.color = ringColor
-        stroke.strokeWidth = if (visualState == "recording") 2.4f * density else 1.2f * density
+        stroke.alpha = 255
+        stroke.strokeWidth = if (visualState == "recording") 2.2f * density else 1.2f * density
         canvas.drawCircle(centerX, centerY, radius, stroke)
 
+        if (visualState == "recording" || visualState == "transcribing") {
+            val pulse = (
+                (sin(phase * if (visualState == "recording") 4.4 else 3.1) + 1.0) * 0.5
+            ).toFloat()
+            stroke.alpha = (34 + pulse * 46).toInt()
+            stroke.strokeWidth = (1.2f + pulse * 0.9f) * density
+            canvas.drawCircle(centerX, centerY, radius - 3.2f * density + pulse * density, stroke)
+            stroke.alpha = 255
+        }
+
+        canvas.save()
+        canvas.scale(0.82f + stateEase * 0.18f, 0.82f + stateEase * 0.18f, centerX, centerY)
         when {
             now < errorUntil -> drawError(canvas, centerX, centerY)
-            visualState == "recording" -> drawRecording(canvas, centerX, centerY)
-            visualState == "transcribing" -> drawLoading(canvas, centerX, centerY)
+            visualState == "recording" -> drawRecording(canvas, centerX, centerY, phase)
+            visualState == "transcribing" -> drawLoading(canvas, centerX, centerY, phase)
             else -> drawIdle(canvas, centerX, centerY)
         }
         canvas.restore()
-        if (visualState != "idle" || now < errorUntil) postInvalidateOnAnimation()
+        canvas.restore()
+        if (visualState != "idle" || now < errorUntil || stateProgress < 1f) {
+            postInvalidateOnAnimation()
+        }
     }
 
     private fun drawIdle(canvas: Canvas, centerX: Float, centerY: Float) {
         val icon = appIcon ?: return
-        val halfSize = 22f * density
+        val halfSize = 19.5f * density
         icon.setBounds(
             (centerX - halfSize).toInt(),
             (centerY - halfSize).toInt(),
@@ -482,17 +521,31 @@ private class FloatingWaveView(
         icon.draw(canvas)
     }
 
-    private fun drawRecording(canvas: Canvas, centerX: Float, centerY: Float) {
+    private fun drawRecording(canvas: Canvas, centerX: Float, centerY: Float, phase: Double) {
         val indexes = intArrayOf(0, 2, 4, 5, 6, 8, 10)
-        val barWidth = 2.7f * density
-        val gap = 3.2f * density
+        val barWidth = 2.5f * density
+        val gap = 2.8f * density
         val total = indexes.size * barWidth + (indexes.size - 1) * gap
         var x = centerX - total / 2f
+        paint.color = Color.rgb(6, 78, 59)
+        paint.alpha = 78
+        canvas.drawRoundRect(
+            centerX - 21.5f * density,
+            centerY - 14f * density,
+            centerX + 21.5f * density,
+            centerY + 14f * density,
+            14f * density,
+            14f * density,
+            paint,
+        )
         paint.color = Color.rgb(16, 185, 129)
-        for (sourceIndex in indexes) {
+        for ((barIndex, sourceIndex) in indexes.withIndex()) {
             val band = currentBands[sourceIndex].toFloat()
-            val animated = (sin(phase + sourceIndex * 0.7) + 1.0).toFloat() * 0.5f
-            val height = (5f + min(1f, band * 1.4f + level.toFloat() * 0.25f) * 24f + animated * band * 3f) * density
+            val breathing = ((sin(phase * 5.2 + sourceIndex * 0.74) + 1.0) * 0.5).toFloat()
+            val centerWeight = 1f - abs(barIndex - 3) * 0.08f
+            val energy = min(1f, band * 1.35f + displayedLevel * 0.34f)
+            val height = (5f + energy * 19f * centerWeight + breathing * (2.2f + energy * 2.6f)) * density
+            paint.alpha = (172 + energy * 83f).toInt()
             canvas.drawRoundRect(
                 x,
                 centerY - height / 2f,
@@ -504,19 +557,36 @@ private class FloatingWaveView(
             )
             x += barWidth + gap
         }
+        paint.alpha = 255
     }
 
-    private fun drawLoading(canvas: Canvas, centerX: Float, centerY: Float) {
+    private fun drawLoading(canvas: Canvas, centerX: Float, centerY: Float, phase: Double) {
+        paint.color = Color.rgb(120, 53, 15)
+        paint.alpha = 72
+        canvas.drawRoundRect(
+            centerX - 21f * density,
+            centerY - 10.5f * density,
+            centerX + 21f * density,
+            centerY + 10.5f * density,
+            10.5f * density,
+            10.5f * density,
+            paint,
+        )
         paint.color = Color.rgb(245, 158, 11)
         for (index in 0 until 5) {
-            val x = centerX + (index - 2) * 7f * density
-            val y = centerY + sin(phase * 1.8 - index * 0.85).toFloat() * 4f * density
-            canvas.drawCircle(x, y, 2.1f * density, paint)
+            val wave = ((sin(phase * 5.1 - index * 0.82) + 1.0) * 0.5).toFloat()
+            val x = centerX + (index - 2) * 7.2f * density
+            val y = centerY + (wave - 0.5f) * 5.2f * density
+            val dotRadius = (1.65f + wave * 1.05f) * density
+            paint.alpha = (105 + wave * 150f).toInt()
+            canvas.drawCircle(x, y, dotRadius, paint)
         }
+        paint.alpha = 255
     }
 
     private fun drawError(canvas: Canvas, centerX: Float, centerY: Float) {
         paint.color = Color.rgb(239, 68, 68)
+        paint.alpha = 255
         canvas.drawRoundRect(
             centerX - 2f * density,
             centerY - 11f * density,
