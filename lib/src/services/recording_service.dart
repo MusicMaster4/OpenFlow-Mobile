@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 
@@ -55,7 +56,7 @@ class RecordingService {
     const encoder = AudioEncoder.wav;
     const format = 'wav';
     final path = '${temp.path}${Platform.pathSeparator}openflow_$stamp.$format';
-    await _recorder.start(_recordConfig(encoder), path: path);
+    await _recorder.start(debugRecordConfig(encoder), path: path);
     _amplitudeSubscription = _recorder
         .onAmplitudeChanged(const Duration(milliseconds: 90))
         .listen(
@@ -64,7 +65,8 @@ class RecordingService {
     return RecordingStart(path: path, format: format);
   }
 
-  RecordConfig _recordConfig(AudioEncoder encoder) => RecordConfig(
+  @visibleForTesting
+  static RecordConfig debugRecordConfig(AudioEncoder encoder) => RecordConfig(
     encoder: encoder,
     sampleRate: _sampleRate,
     numChannels: 1,
@@ -72,6 +74,10 @@ class RecordingService {
     autoGain: true,
     echoCancel: true,
     noiseSuppress: true,
+    // The app's silencer deliberately takes exclusive audio focus shortly
+    // after capture starts. The package default (`pause`) would therefore
+    // pause our own recorder and leave a silent/header-only WAV.
+    audioInterruption: AudioInterruptionMode.none,
     streamBufferSize: 2048,
     androidConfig: AndroidRecordConfig(
       useLegacy: false,

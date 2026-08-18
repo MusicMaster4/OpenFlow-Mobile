@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:record/record.dart';
 import 'package:voxora/src/models/transcript_entry.dart';
 import 'package:voxora/src/models/usage_stats.dart';
 import 'package:voxora/src/services/openrouter_service.dart';
@@ -115,6 +116,12 @@ void main() {
     },
   );
 
+  test('recording ignores the app silencer audio-focus interruption', () {
+    final config = RecordingService.debugRecordConfig(AudioEncoder.wav);
+
+    expect(config.audioInterruption, AudioInterruptionMode.none);
+  });
+
   test('header-only audio is rejected before reaching OpenRouter', () async {
     final directory = await Directory.systemTemp.createTemp('openflow_test_');
     final file = File('${directory.path}${Platform.pathSeparator}empty.wav');
@@ -134,6 +141,43 @@ void main() {
           contains('não capturou áudio'),
         ),
       ),
+    );
+  });
+
+  test('silent PCM audio is rejected before reaching OpenRouter', () async {
+    final directory = await Directory.systemTemp.createTemp('openflow_silent_');
+    final file = File('${directory.path}${Platform.pathSeparator}silent.wav');
+    await file.writeAsBytes(_wavWithSamples(List<int>.filled(1600, 0)));
+    final service = OpenRouterService();
+    addTearDown(() async {
+      service.dispose();
+      await directory.delete(recursive: true);
+    });
+
+    await expectLater(
+      service.transcribe(file: file, apiKey: 'unused', format: 'wav'),
+      throwsA(isA<OpenRouterException>()),
+    );
+  });
+
+  test('truncated recording is rejected using its expected duration', () async {
+    final directory = await Directory.systemTemp.createTemp('openflow_short_');
+    final file = File('${directory.path}${Platform.pathSeparator}short.wav');
+    await file.writeAsBytes(_wavWithSamples(List<int>.filled(3200, 12)));
+    final service = OpenRouterService();
+    addTearDown(() async {
+      service.dispose();
+      await directory.delete(recursive: true);
+    });
+
+    await expectLater(
+      service.transcribe(
+        file: file,
+        apiKey: 'unused',
+        format: 'wav',
+        expectedDurationMs: 5000,
+      ),
+      throwsA(isA<OpenRouterException>()),
     );
   });
 
@@ -187,7 +231,11 @@ void main() {
 }
 
 List<int> _wavWithOneSample() {
-  final bytes = List<int>.filled(66, 0);
+  return _wavWithSamples(<int>[16, 0, ...List<int>.filled(20, 0)]);
+}
+
+List<int> _wavWithSamples(List<int> samples) {
+  final bytes = List<int>.filled(44 + samples.length, 0);
   void ascii(int offset, String value) {
     bytes.setRange(offset, offset + value.length, value.codeUnits);
   }
@@ -199,7 +247,7 @@ List<int> _wavWithOneSample() {
   }
 
   ascii(0, 'RIFF');
-  littleEndian(4, 58, 4);
+  littleEndian(4, bytes.length - 8, 4);
   ascii(8, 'WAVE');
   ascii(12, 'fmt ');
   littleEndian(16, 16, 4);
@@ -210,6 +258,7 @@ List<int> _wavWithOneSample() {
   littleEndian(32, 2, 2);
   littleEndian(34, 16, 2);
   ascii(36, 'data');
-  littleEndian(40, 22, 4);
+  littleEndian(40, samples.length, 4);
+  bytes.setRange(44, bytes.length, samples);
   return bytes;
 }

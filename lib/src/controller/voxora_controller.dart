@@ -441,6 +441,7 @@ class VoxoraController extends ChangeNotifier {
       apiKey: apiKey,
       format: format,
       languageHint: languageHint,
+      expectedDurationMs: recordedDurationMs,
     );
     final entry = TranscriptEntry(
       id: DateTime.now().microsecondsSinceEpoch.toString(),

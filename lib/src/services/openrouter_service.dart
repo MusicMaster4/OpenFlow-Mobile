@@ -43,11 +43,12 @@ class OpenRouterService {
     required String apiKey,
     required String format,
     String languageHint = 'auto',
+    int expectedDurationMs = 0,
   }) async {
     final bytes = await file.readAsBytes();
-    if (!_hasAudioPayload(bytes, format)) {
+    if (!_hasAudioPayload(bytes, format, expectedDurationMs)) {
       throw const OpenRouterException(
-        'O microfone não capturou áudio. Tente gravar novamente.',
+        'O microfone não capturou áudio suficiente. Verifique se outro app está usando o microfone e tente novamente.',
       );
     }
 
@@ -149,25 +150,68 @@ class OpenRouterService {
     );
   }
 
-  static bool _hasAudioPayload(List<int> bytes, String format) {
+  static bool _hasAudioPayload(
+    List<int> bytes,
+    String format,
+    int expectedDurationMs,
+  ) {
     if (bytes.length < 64) return false;
     if (format.toLowerCase() != 'wav') return true;
 
-    // A PCM/WAV without samples is exactly a RIFF header (normally 44 bytes).
-    // Reading the data-chunk length also catches variants with extra metadata.
+    if (_ascii(bytes, 0, 4) != 'RIFF' || _ascii(bytes, 8, 4) != 'WAVE') {
+      return false;
+    }
+
+    var byteRate = 0;
+    var audioFormat = 0;
+    var bitsPerSample = 0;
     for (var index = 12; index + 8 <= bytes.length;) {
-      final chunk = String.fromCharCodes(bytes.sublist(index, index + 4));
-      final length =
-          bytes[index + 4] |
-          (bytes[index + 5] << 8) |
-          (bytes[index + 6] << 16) |
-          (bytes[index + 7] << 24);
-      if (chunk == 'data') return length > 0 && index + 8 < bytes.length;
-      if (length < 0) return false;
+      final chunk = _ascii(bytes, index, 4);
+      final length = _littleEndian32(bytes, index + 4);
+      final dataStart = index + 8;
+      final dataEnd = dataStart + length;
+      if (length < 0 || dataEnd > bytes.length) return false;
+
+      if (chunk == 'fmt ' && length >= 16) {
+        audioFormat = _littleEndian16(bytes, dataStart);
+        byteRate = _littleEndian32(bytes, dataStart + 8);
+        bitsPerSample = _littleEndian16(bytes, dataStart + 14);
+      } else if (chunk == 'data') {
+        if (length <= 0) return false;
+
+        // A file much shorter than the duration shown in the UI means Android
+        // interrupted/paused capture; sending it only produces empty text.
+        if (expectedDurationMs >= 1000 && byteRate > 0) {
+          final actualDurationMs = (length * 1000) ~/ byteRate;
+          if (actualDurationMs + 500 < expectedDurationMs ~/ 2) return false;
+        }
+
+        // This recorder writes 16-bit PCM. Exact zero samples mean that no
+        // microphone input reached the encoder (normal room noise is non-zero).
+        if (audioFormat == 1 && bitsPerSample == 16) {
+          for (var sample = dataStart; sample + 1 < dataEnd; sample += 2) {
+            if (bytes[sample] != 0 || bytes[sample + 1] != 0) return true;
+          }
+          return false;
+        }
+        return true;
+      }
       index += 8 + length + (length.isOdd ? 1 : 0);
     }
     return false;
   }
+
+  static String _ascii(List<int> bytes, int offset, int length) =>
+      String.fromCharCodes(bytes.sublist(offset, offset + length));
+
+  static int _littleEndian16(List<int> bytes, int offset) =>
+      bytes[offset] | (bytes[offset + 1] << 8);
+
+  static int _littleEndian32(List<int> bytes, int offset) =>
+      bytes[offset] |
+      (bytes[offset + 1] << 8) |
+      (bytes[offset + 2] << 16) |
+      (bytes[offset + 3] << 24);
 
   static String? _errorMessageFrom(
     Map<String, dynamic> payload, {

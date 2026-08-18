@@ -832,7 +832,13 @@ class _SettingsSheetState extends State<_SettingsSheet> {
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
     return AnimatedBuilder(
-      animation: widget.controller,
+      // Update checks and downloads run independently from the main
+      // controller. Listen to both so the open settings sheet reflects each
+      // update phase immediately, without requiring it to be closed/reopened.
+      animation: Listenable.merge([
+        widget.controller,
+        widget.controller.updates,
+      ]),
       builder: (context, _) {
         final controller = widget.controller;
         return Container(
