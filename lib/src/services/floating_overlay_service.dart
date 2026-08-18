@@ -92,9 +92,12 @@ class FloatingOverlayService {
     await _channel.invokeMethod<void>('playFeedback', {'sound': sound});
   }
 
-  Future<bool> pasteText(String text) async {
+  Future<bool> pasteText(String text, {bool keepInClipboard = true}) async {
     if (!Platform.isAndroid) return false;
-    return await _channel.invokeMethod<bool>('pasteText', {'text': text}) ??
+    return await _channel.invokeMethod<bool>('pasteText', {
+          'text': text,
+          'keepInClipboard': keepInClipboard,
+        }) ??
         false;
   }
 

@@ -1108,7 +1108,8 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                           _SettingsSwitch(
                             icon: Icons.copy_all_outlined,
                             title: 'Copiar automaticamente',
-                            subtitle: 'Ao concluir uma transcrição',
+                            subtitle:
+                                'Mantém a transcrição na área de transferência',
                             value: controller.autoCopy,
                             onChanged: controller.setAutoCopy,
                           ),

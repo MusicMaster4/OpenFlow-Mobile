@@ -195,6 +195,7 @@ object OpenFlowEngine {
                         "pasteText" -> result.success(
                             OpenFlowAccessibilityService.pasteText(
                                 call.argument<String>("text").orEmpty(),
+                                call.argument<Boolean>("keepInClipboard") != false,
                             ),
                         )
                         "updateOverlay" -> {

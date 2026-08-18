@@ -461,7 +461,7 @@ class VoxoraController extends ChangeNotifier {
     _usageStats = _usageStats.add(entry);
     await _storage.saveUsageStats(_usageStats);
 
-    var copied = autoCopy || _recordingFromOverlay;
+    var copied = autoCopy;
     if (copied && _recordingFromOverlay) {
       copied = await _floatingOverlay.copyText(entry.text);
     } else if (copied) {
@@ -472,7 +472,10 @@ class VoxoraController extends ChangeNotifier {
     if (_recordingFromOverlay && autoPaste) {
       accessibilityEnabled = await _floatingOverlay.isAccessibilityEnabled();
       if (accessibilityEnabled) {
-        pasted = await _floatingOverlay.pasteText(entry.text);
+        pasted = await _floatingOverlay.pasteText(
+          entry.text,
+          keepInClipboard: autoCopy,
+        );
       }
     }
     _setFeedback(
