@@ -83,17 +83,16 @@ class FloatingOverlayService : Service() {
     }
 
     private fun showBubble(): Boolean {
-        val currentBubble = bubble
-        if (currentBubble?.isAttachedToWindow == true) {
-            ensureBubbleOnScreen()
-            return true
+        // addView() registers the window synchronously, but View attachment happens
+        // later. Using isAttachedToWindow here creates a race where onStartCommand
+        // adds a second window immediately after onCreate added the first one.
+        if (bubble != null) {
+            return ensureBubbleOnScreen()
         }
-        bubble = null
-        layoutParams = null
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         val size = dp(58)
         val preferences = getSharedPreferences("openflow_overlay", Context.MODE_PRIVATE)
-        layoutParams = WindowManager.LayoutParams(
+        val newLayoutParams = WindowManager.LayoutParams(
             size,
             size,
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -131,17 +130,18 @@ class FloatingOverlayService : Service() {
             },
         )
         if (pendingKeepScreenOn) {
-            layoutParams?.flags = layoutParams?.flags?.or(
-                WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
-            ) ?: 0
+            newLayoutParams.flags = newLayoutParams.flags or
+                WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
         }
         try {
-            windowManager.addView(newBubble, layoutParams)
+            windowManager.addView(newBubble, newLayoutParams)
         } catch (_: RuntimeException) {
-            layoutParams = null
             return false
         }
+        // These references represent ownership of exactly one registered window.
+        // They are only published after addView succeeds.
         bubble = newBubble
+        layoutParams = newLayoutParams
         savePosition()
         pendingState?.let { snapshot ->
             bubble?.update(snapshot.state, snapshot.level, snapshot.bands)
@@ -168,21 +168,35 @@ class FloatingOverlayService : Service() {
             .apply()
     }
 
-    private fun ensureBubbleOnScreen() {
-        val params = layoutParams ?: return
-        val view = bubble ?: return
+    private fun ensureBubbleOnScreen(): Boolean {
+        val params = layoutParams ?: return false
+        val view = bubble ?: return false
         val moved = clampToDisplay(params)
-        if (!moved) return
+        if (!moved) return true
         try {
             windowManager.updateViewLayout(view, params)
             savePosition()
-        } catch (_: IllegalArgumentException) {
+            return true
+        } catch (_: RuntimeException) {
             // The WindowManager may have detached the old view during a display
-            // transition. Recreate it immediately instead of leaving a foreground
-            // service alive without a visible control.
-            bubble = null
-            layoutParams = null
-            if (!showBubble()) stopSelf()
+            // transition. Explicitly unregister it before creating a replacement,
+            // so a stale window can never be left behind on screen.
+            removeBubbleView()
+            return showBubble()
+        }
+    }
+
+    private fun removeBubbleView() {
+        val view = bubble
+        // Clear ownership before asking WindowManager to remove the view. This
+        // keeps callbacks and repeated stop/start requests idempotent.
+        bubble = null
+        layoutParams = null
+        if (view == null) return
+        try {
+            windowManager.removeViewImmediate(view)
+        } catch (_: RuntimeException) {
+            // The window was already removed by Android.
         }
     }
 
@@ -345,15 +359,7 @@ class FloatingOverlayService : Service() {
 
     override fun onDestroy() {
         hideRemovalTarget()
-        bubble?.let { view ->
-            try {
-                windowManager.removeView(view)
-            } catch (_: Throwable) {
-                // The window may already have been removed.
-            }
-        }
-        bubble = null
-        layoutParams = null
+        removeBubbleView()
         if (instance === this) instance = null
         isRunning = false
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -390,7 +396,10 @@ class FloatingOverlayService : Service() {
             context.stopService(Intent(context, FloatingOverlayService::class.java))
         }
 
-        fun isBubbleVisible(): Boolean = instance?.bubble?.isAttachedToWindow == true
+        // A non-null bubble means this service owns a WindowManager registration.
+        // Attachment is asynchronous and must not be used to decide whether a
+        // replacement window should be created.
+        fun isBubbleVisible(): Boolean = instance?.bubble != null
 
         fun update(state: String, level: Double, bands: DoubleArray) {
             val snapshot = OverlaySnapshot(state, level, bands.copyOf())
