@@ -8,6 +8,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.content.res.Configuration
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -40,6 +41,7 @@ class FloatingOverlayService : Service() {
     override fun onCreate() {
         super.onCreate()
         isRunning = true
+        instance = this
         createNotificationChannel()
         val notification = buildNotification()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -55,11 +57,15 @@ class FloatingOverlayService : Service() {
             stopSelf()
             return
         }
-        showBubble()
+        if (!showBubble()) stopSelf()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        if (!Settings.canDrawOverlays(this) || !showBubble()) {
             stopSelf()
             return START_NOT_STICKY
         }
@@ -68,8 +74,22 @@ class FloatingOverlayService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun showBubble() {
-        if (bubble != null) return
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // Saved overlay coordinates are absolute pixels. Rotation, display scaling,
+        // split screen and foldable posture changes can otherwise leave the bubble
+        // outside the new display bounds indefinitely.
+        bubble?.post { ensureBubbleOnScreen() }
+    }
+
+    private fun showBubble(): Boolean {
+        val currentBubble = bubble
+        if (currentBubble?.isAttachedToWindow == true) {
+            ensureBubbleOnScreen()
+            return true
+        }
+        bubble = null
+        layoutParams = null
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         val size = dp(58)
         val preferences = getSharedPreferences("openflow_overlay", Context.MODE_PRIVATE)
@@ -89,8 +109,9 @@ class FloatingOverlayService : Service() {
             gravity = Gravity.TOP or Gravity.START
             x = preferences.getInt("x", resources.displayMetrics.widthPixels - size - dp(18))
             y = preferences.getInt("y", dp(180))
+            clampToDisplay(this)
         }
-        bubble = FloatingWaveView(
+        val newBubble = FloatingWaveView(
             this,
             onDragStarted = { showRemovalTarget() },
             onMove = { deltaX, deltaY ->
@@ -114,11 +135,18 @@ class FloatingOverlayService : Service() {
                 WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
             ) ?: 0
         }
-        windowManager.addView(bubble, layoutParams)
-        instance = this
+        try {
+            windowManager.addView(newBubble, layoutParams)
+        } catch (_: RuntimeException) {
+            layoutParams = null
+            return false
+        }
+        bubble = newBubble
+        savePosition()
         pendingState?.let { snapshot ->
             bubble?.update(snapshot.state, snapshot.level, snapshot.bands)
         }
+        return true
     }
 
     private fun moveBubble(deltaX: Int, deltaY: Int) {
@@ -138,6 +166,50 @@ class FloatingOverlayService : Service() {
             .putInt("x", params.x)
             .putInt("y", params.y)
             .apply()
+    }
+
+    private fun ensureBubbleOnScreen() {
+        val params = layoutParams ?: return
+        val view = bubble ?: return
+        val moved = clampToDisplay(params)
+        if (!moved) return
+        try {
+            windowManager.updateViewLayout(view, params)
+            savePosition()
+        } catch (_: IllegalArgumentException) {
+            // The WindowManager may have detached the old view during a display
+            // transition. Recreate it immediately instead of leaving a foreground
+            // service alive without a visible control.
+            bubble = null
+            layoutParams = null
+            if (!showBubble()) stopSelf()
+        }
+    }
+
+    private fun clampToDisplay(params: WindowManager.LayoutParams): Boolean {
+        val width: Int
+        val height: Int
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val bounds = windowManager.currentWindowMetrics.bounds
+            width = bounds.width()
+            height = bounds.height()
+        } else {
+            @Suppress("DEPRECATION")
+            val metrics = resources.displayMetrics
+            width = metrics.widthPixels
+            height = metrics.heightPixels
+        }
+        val oldPosition = OverlayPosition(params.x, params.y)
+        val position = clampOverlayPosition(
+            position = oldPosition,
+            overlayWidth = params.width,
+            overlayHeight = params.height,
+            displayWidth = width,
+            displayHeight = height,
+        )
+        params.x = position.x
+        params.y = position.y
+        return position != oldPosition
     }
 
     private fun sendOverlayEvent(event: String, onDelivered: (() -> Unit)? = null) {
@@ -318,6 +390,8 @@ class FloatingOverlayService : Service() {
             context.stopService(Intent(context, FloatingOverlayService::class.java))
         }
 
+        fun isBubbleVisible(): Boolean = instance?.bubble?.isAttachedToWindow == true
+
         fun update(state: String, level: Double, bands: DoubleArray) {
             val snapshot = OverlaySnapshot(state, level, bands.copyOf())
             pendingState = snapshot
@@ -334,6 +408,19 @@ class FloatingOverlayService : Service() {
         }
     }
 }
+
+internal data class OverlayPosition(val x: Int, val y: Int)
+
+internal fun clampOverlayPosition(
+    position: OverlayPosition,
+    overlayWidth: Int,
+    overlayHeight: Int,
+    displayWidth: Int,
+    displayHeight: Int,
+): OverlayPosition = OverlayPosition(
+    x = position.x.coerceIn(0, max(0, displayWidth - overlayWidth)),
+    y = position.y.coerceIn(0, max(0, displayHeight - overlayHeight)),
+)
 
 private data class OverlaySnapshot(
     val state: String,

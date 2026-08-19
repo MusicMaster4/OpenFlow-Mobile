@@ -112,7 +112,9 @@ object OpenFlowEngine {
                             FloatingOverlayService.stop(context)
                             result.success(null)
                         }
-                        "isOverlayRunning" -> result.success(FloatingOverlayService.isRunning)
+                        "isOverlayRunning" -> result.success(
+                            FloatingOverlayService.isBubbleVisible(),
+                        )
                         "hasRecordAudioPermission" -> result.success(
                             ContextCompat.checkSelfPermission(
                                 context,
