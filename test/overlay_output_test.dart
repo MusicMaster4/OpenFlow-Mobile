@@ -95,6 +95,7 @@ class _FakeOpenRouter extends OpenRouterService {
     required String apiKey,
     required String format,
     String languageHint = 'auto',
+    String modelId = OpenRouterService.defaultModel,
     int expectedDurationMs = 0,
   }) async => const TranscriptionResult(
     text: 'Texto vindo da bolinha.',

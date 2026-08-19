@@ -20,6 +20,30 @@ class TranscriptionResult {
   final double costUsd;
 }
 
+class TranscriptionModel {
+  const TranscriptionModel({
+    required this.id,
+    required this.name,
+    this.description = '',
+  });
+
+  final String id;
+  final String name;
+  final String description;
+
+  String get provider => id.contains('/') ? id.split('/').first : '';
+
+  factory TranscriptionModel.fromJson(Map<String, dynamic> json) {
+    final id = (json['id'] as String? ?? '').trim();
+    final rawName = (json['name'] as String? ?? '').trim();
+    return TranscriptionModel(
+      id: id,
+      name: rawName.isEmpty ? id : rawName,
+      description: (json['description'] as String? ?? '').trim(),
+    );
+  }
+}
+
 class OpenRouterException implements Exception {
   const OpenRouterException(this.message);
   final String message;
@@ -32,8 +56,12 @@ class OpenRouterService {
   OpenRouterService({http.Client? client}) : _client = client ?? http.Client();
 
   static const model = 'microsoft/mai-transcribe-1.5';
+  static const defaultModel = model;
   static final endpoint = Uri.parse(
     'https://openrouter.ai/api/v1/audio/transcriptions',
+  );
+  static final modelsEndpoint = Uri.parse(
+    'https://openrouter.ai/api/v1/models?output_modalities=transcription',
   );
 
   final http.Client _client;
@@ -43,6 +71,7 @@ class OpenRouterService {
     required String apiKey,
     required String format,
     String languageHint = 'auto',
+    String modelId = defaultModel,
     int expectedDurationMs = 0,
   }) async {
     final bytes = await file.readAsBytes();
@@ -53,7 +82,7 @@ class OpenRouterService {
     }
 
     final body = <String, Object>{
-      'model': model,
+      'model': modelId,
       'input_audio': <String, String>{
         'data': base64Encode(bytes),
         'format': format,
@@ -97,12 +126,76 @@ class OpenRouterService {
     return decodeResponse(
       response,
       elapsedMs: DateTime.now().difference(startedAt).inMilliseconds,
+      fallbackModel: modelId,
     );
+  }
+
+  Future<List<TranscriptionModel>> listTranscriptionModels({
+    String? apiKey,
+  }) async {
+    late http.Response response;
+    try {
+      response = await _client
+          .get(
+            modelsEndpoint,
+            headers: {
+              'Accept': 'application/json',
+              'X-OpenRouter-Title': 'OpenFlow Mobile',
+              if (apiKey != null && apiKey.trim().isNotEmpty)
+                'Authorization': 'Bearer ${apiKey.trim()}',
+            },
+          )
+          .timeout(const Duration(seconds: 30));
+    } on TimeoutException {
+      throw const OpenRouterException(
+        'A lista de modelos demorou demais para carregar.',
+      );
+    } on SocketException {
+      throw const OpenRouterException(
+        'Sem conexão para carregar os modelos da OpenRouter.',
+      );
+    } on http.ClientException {
+      throw const OpenRouterException(
+        'Não foi possível carregar os modelos da OpenRouter.',
+      );
+    }
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw OpenRouterException(
+        response.statusCode == 401
+            ? 'A chave da OpenRouter não permitiu consultar os modelos.'
+            : 'Não foi possível carregar os modelos (HTTP ${response.statusCode}).',
+      );
+    }
+
+    try {
+      final payload = jsonDecode(response.body);
+      if (payload is! Map || payload['data'] is! List) {
+        throw const FormatException();
+      }
+      final models = (payload['data'] as List)
+          .whereType<Map>()
+          .map(
+            (item) =>
+                TranscriptionModel.fromJson(Map<String, dynamic>.from(item)),
+          )
+          .where((item) => item.id.isNotEmpty)
+          .toList();
+      models.sort(
+        (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+      );
+      return models;
+    } on FormatException {
+      throw const OpenRouterException(
+        'A OpenRouter retornou uma lista de modelos inválida.',
+      );
+    }
   }
 
   static TranscriptionResult decodeResponse(
     http.Response response, {
     required int elapsedMs,
+    String fallbackModel = defaultModel,
   }) {
     Map<String, dynamic> payload = const {};
     try {
@@ -143,7 +236,7 @@ class OpenRouterService {
 
     return TranscriptionResult(
       text: text,
-      model: payload['model'] as String? ?? model,
+      model: payload['model'] as String? ?? fallbackModel,
       transcriptionMs: elapsedMs,
       audioDurationMs: (seconds * 1000).round(),
       costUsd: (usage['cost'] as num?)?.toDouble() ?? 0,

@@ -43,6 +43,7 @@ class VoxoraController extends ChangeNotifier {
   bool _pendingOverlayEnable = false;
   bool _recordingFromOverlay = false;
   UsageStats _usageStats = const UsageStats();
+  final List<TranscriptionModel> _transcriptionModels = [];
 
   VoxoraActivity activity = VoxoraActivity.idle;
   bool autoCopy = true;
@@ -54,6 +55,9 @@ class VoxoraController extends ChangeNotifier {
   bool soundEffectsEnabled = true;
   bool silenceWhileRecording = true;
   String languageHint = 'auto';
+  String transcriptionModel = OpenRouterService.defaultModel;
+  bool isLoadingTranscriptionModels = false;
+  String? transcriptionModelsError;
   int recordingDurationMs = 0;
   double amplitude = 0;
   List<double> audioBands = List<double>.filled(11, 0);
@@ -63,6 +67,8 @@ class VoxoraController extends ChangeNotifier {
   int feedbackSerial = 0;
 
   List<TranscriptEntry> get history => List.unmodifiable(_history);
+  List<TranscriptionModel> get transcriptionModels =>
+      List.unmodifiable(_transcriptionModels);
   UsageStats get usageStats => _usageStats;
   TranscriptEntry? get latest => _history.isEmpty ? null : _history.first;
   bool get hasApiKey => _apiKey?.isNotEmpty ?? false;
@@ -83,6 +89,7 @@ class VoxoraController extends ChangeNotifier {
       _storage.loadSoundEffects(),
       _storage.loadSilenceWhileRecording(),
       _storage.loadUsageStats(),
+      _storage.loadTranscriptionModel(),
     ]);
     _history
       ..clear()
@@ -94,6 +101,7 @@ class VoxoraController extends ChangeNotifier {
     soundEffectsEnabled = values[6] as bool;
     silenceWhileRecording = values[7] as bool;
     _usageStats = values[8] as UsageStats? ?? UsageStats.fromHistory(_history);
+    transcriptionModel = values[9] as String;
     if (values[8] == null && _history.isNotEmpty) {
       await _storage.saveUsageStats(_usageStats);
     }
@@ -153,6 +161,41 @@ class VoxoraController extends ChangeNotifier {
     languageHint = value;
     notifyListeners();
     await _storage.saveLanguageHint(value);
+  }
+
+  Future<void> setTranscriptionModel(String value) async {
+    final normalized = value.trim();
+    if (normalized.isEmpty || isBusy) return;
+    transcriptionModel = normalized;
+    transcriptionModelsError = null;
+    notifyListeners();
+    await _storage.saveTranscriptionModel(normalized);
+    _setFeedback('Modelo de transcrição atualizado.');
+  }
+
+  Future<void> loadTranscriptionModels({bool force = false}) async {
+    if (isLoadingTranscriptionModels ||
+        (!force && _transcriptionModels.isNotEmpty)) {
+      return;
+    }
+    isLoadingTranscriptionModels = true;
+    transcriptionModelsError = null;
+    notifyListeners();
+    try {
+      final models = await _openRouter.listTranscriptionModels(apiKey: _apiKey);
+      _transcriptionModels
+        ..clear()
+        ..addAll(models);
+      if (models.isEmpty) {
+        transcriptionModelsError =
+            'Nenhum modelo de transcrição está disponível agora.';
+      }
+    } catch (error) {
+      transcriptionModelsError = _cleanError(error);
+    } finally {
+      isLoadingTranscriptionModels = false;
+      notifyListeners();
+    }
   }
 
   Future<void> setFloatingOverlayEnabled(bool value) async {
@@ -441,6 +484,7 @@ class VoxoraController extends ChangeNotifier {
       apiKey: apiKey,
       format: format,
       languageHint: languageHint,
+      modelId: transcriptionModel,
       expectedDurationMs: recordedDurationMs,
     );
     final entry = TranscriptEntry(

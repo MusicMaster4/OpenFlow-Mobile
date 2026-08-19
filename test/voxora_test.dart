@@ -101,13 +101,14 @@ void main() {
         file: file,
         apiKey: 'test-key',
         format: 'wav',
+        modelId: 'openai/gpt-4o-mini-transcribe',
       );
       final body = jsonDecode(captured.body) as Map<String, dynamic>;
       final inputAudio = body['input_audio'] as Map<String, dynamic>;
 
       expect(captured.url, OpenRouterService.endpoint);
       expect(captured.headers['authorization'], 'Bearer test-key');
-      expect(body['model'], OpenRouterService.model);
+      expect(body['model'], 'openai/gpt-4o-mini-transcribe');
       expect(body, isNot(contains('language')));
       expect(body, isNot(contains('temperature')));
       expect(inputAudio['format'], 'wav');
@@ -115,6 +116,30 @@ void main() {
       expect(result.text, 'Funcionou.');
     },
   );
+
+  test('OpenRouter lists and sorts transcription models', () async {
+    late http.Request captured;
+    final client = MockClient((request) async {
+      captured = request;
+      return http.Response(
+        '{"data":['
+        '{"id":"microsoft/mai-transcribe-1.5","name":"Microsoft: MAI Transcribe"},'
+        '{"id":"openai/gpt-4o-mini-transcribe","name":"OpenAI: GPT-4o Mini Transcribe"}'
+        ']}',
+        200,
+      );
+    });
+    final service = OpenRouterService(client: client);
+    addTearDown(service.dispose);
+
+    final models = await service.listTranscriptionModels(apiKey: 'test-key');
+
+    expect(captured.url, OpenRouterService.modelsEndpoint);
+    expect(captured.headers['authorization'], 'Bearer test-key');
+    expect(models, hasLength(2));
+    expect(models.first.id, 'microsoft/mai-transcribe-1.5');
+    expect(models.last.id, 'openai/gpt-4o-mini-transcribe');
+  });
 
   test('recording ignores the app silencer audio-focus interruption', () {
     final config = RecordingService.debugRecordConfig(AudioEncoder.wav);

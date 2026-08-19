@@ -5,11 +5,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/transcript_entry.dart';
 import '../models/usage_stats.dart';
+import 'openrouter_service.dart';
 
 class LocalStorageService {
   static const _historyKey = 'voxora.history.v1';
   static const _autoCopyKey = 'voxora.autoCopy';
   static const _languageKey = 'voxora.languageHint';
+  static const _transcriptionModelKey = 'openrouter.transcriptionModel';
   static const _floatingOverlayKey = 'openflow.floatingOverlay';
   static const _autoPasteKey = 'openflow.autoPaste';
   static const _soundEffectsKey = 'openflow.soundEffects';
@@ -68,6 +70,17 @@ class LocalStorageService {
   Future<void> saveLanguageHint(String value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_languageKey, value);
+  }
+
+  Future<String> loadTranscriptionModel() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_transcriptionModelKey) ??
+        OpenRouterService.defaultModel;
+  }
+
+  Future<void> saveTranscriptionModel(String value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_transcriptionModelKey, value);
   }
 
   Future<bool> loadFloatingOverlay() async {

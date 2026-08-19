@@ -48,7 +48,7 @@ flowchart LR
     E --> H[Campo selecionado]
 ```
 
-O modelo atual é `microsoft/mai-transcribe-1.5`. O áudio é enviado somente quando uma transcrição é solicitada. O histórico de texto e as preferências continuam no aparelho.
+O modelo inicial é `microsoft/mai-transcribe-1.5`. Nas configurações, você pode pesquisar e escolher qualquer modelo de transcrição disponível na OpenRouter; a escolha fica salva no aparelho. O áudio é enviado somente quando uma transcrição é solicitada. O histórico de texto e as preferências continuam no aparelho.
 
 ## Instalação
 
