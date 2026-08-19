@@ -754,14 +754,52 @@ class _TranscriptCard extends StatelessWidget {
               const SizedBox(height: 8),
               Row(
                 children: [
-                  Text(
-                    '${_sourceLabel(entry.source)}  •  ${_relativeTime(entry.createdAt)}',
-                    style: const TextStyle(
-                      color: VoxoraColors.muted,
-                      fontSize: 10.5,
+                  Expanded(
+                    child: Text(
+                      '${_sourceLabel(entry.source)}  •  ${_relativeTime(entry.createdAt)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: VoxoraColors.muted,
+                        fontSize: 10.5,
+                      ),
                     ),
                   ),
-                  const Spacer(),
+                  const SizedBox(width: 8),
+                  Tooltip(
+                    message: 'Custo desta transcrição na OpenRouter',
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: VoxoraColors.surfaceRaised,
+                        borderRadius: BorderRadius.circular(99),
+                        border: Border.all(color: VoxoraColors.border),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.payments_outlined,
+                            size: 12,
+                            color: VoxoraColors.muted,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            _formatCostUsd(entry.costUsd),
+                            style: const TextStyle(
+                              color: VoxoraColors.mutedStrong,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 2),
                   IconButton(
                     onPressed: onCopy,
                     tooltip: 'Copiar',
@@ -1849,6 +1887,12 @@ String _formatDuration(int milliseconds) {
   final minutes = totalSeconds ~/ 60;
   final seconds = totalSeconds % 60;
   return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+}
+
+String _formatCostUsd(double value) {
+  final normalized = value.isFinite && value > 0 ? value : 0.0;
+  final decimals = normalized > 0 && normalized < 0.0001 ? 6 : 4;
+  return '\$${normalized.toStringAsFixed(decimals)}';
 }
 
 String _sourceLabel(String source) {
