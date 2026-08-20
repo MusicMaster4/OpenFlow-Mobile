@@ -58,7 +58,7 @@ class StatisticsScreen extends StatelessWidget {
                       value: '${stats.streakDays}',
                       suffix: stats.streakDays == 1 ? 'dia' : 'dias',
                       icon: Icons.local_fire_department_outlined,
-                      color: VoxoraColors.warning,
+                      color: VoxoraColors.accent,
                     ),
                     _MetricCard(
                       label: 'DIAS DE USO',
@@ -72,14 +72,14 @@ class StatisticsScreen extends StatelessWidget {
                       value: _compactNumber(stats.totalWords),
                       suffix: 'faladas',
                       icon: Icons.notes_rounded,
-                      color: VoxoraColors.accent,
+                      color: VoxoraColors.text,
                     ),
                     _MetricCard(
                       label: 'VELOCIDADE',
                       value: stats.averageWpm.round().toString(),
                       suffix: 'PPM média',
                       icon: Icons.speed_rounded,
-                      color: VoxoraColors.accent,
+                      color: VoxoraColors.text,
                     ),
                   ],
                 ),
@@ -298,7 +298,7 @@ class _WeeklyChart extends StatelessWidget {
                       decoration: BoxDecoration(
                         color: day.words == 0
                             ? VoxoraColors.borderStrong
-                            : VoxoraColors.accent,
+                            : VoxoraColors.text,
                         borderRadius: BorderRadius.circular(99),
                       ),
                     ),

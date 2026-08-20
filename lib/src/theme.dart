@@ -7,23 +7,23 @@ abstract final class VoxoraColors {
   static const surfaceSoft = Color(0xFF141412);
   static const border = Color(0xFF2F2F2B);
   static const borderStrong = Color(0xFF45453F);
-  static const accent = Color(0xFF10B981);
-  static const accentStrong = Color(0xFF059669);
+  static const accent = Color(0xFFEF4444);
+  static const toggle = Color(0xFF10B981);
   static const cyan = Color(0xFFEAEAEA);
   static const text = Color(0xFFEAEAEA);
   static const muted = Color(0xFF8C8C8A);
   static const mutedStrong = Color(0xFFC2C2C0);
+  static const ink = Color(0xFF111110);
   static const danger = Color(0xFFEF4444);
-  static const warning = Color(0xFFF59E0B);
 }
 
 abstract final class VoxoraTheme {
   static ThemeData get dark {
     const scheme = ColorScheme.dark(
-      primary: VoxoraColors.accent,
-      onPrimary: Colors.white,
-      secondary: VoxoraColors.text,
-      onSecondary: Color(0xFF111110),
+      primary: VoxoraColors.text,
+      onPrimary: VoxoraColors.ink,
+      secondary: VoxoraColors.accent,
+      onSecondary: Colors.white,
       surface: VoxoraColors.surface,
       onSurface: VoxoraColors.text,
       error: VoxoraColors.danger,
@@ -107,6 +107,30 @@ abstract final class VoxoraTheme {
         surfaceTintColor: Colors.transparent,
       ),
       dividerColor: VoxoraColors.border,
+      progressIndicatorTheme: const ProgressIndicatorThemeData(
+        color: VoxoraColors.text,
+        linearTrackColor: VoxoraColors.border,
+      ),
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return VoxoraColors.toggle;
+          }
+          return VoxoraColors.mutedStrong;
+        }),
+        trackColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return VoxoraColors.toggle.withValues(alpha: 0.42);
+          }
+          return VoxoraColors.borderStrong;
+        }),
+        trackOutlineColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return Colors.transparent;
+          }
+          return VoxoraColors.border;
+        }),
+      ),
     );
   }
 }

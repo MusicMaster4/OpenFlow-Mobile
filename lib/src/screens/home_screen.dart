@@ -65,7 +65,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   isError
                       ? Icons.error_outline_rounded
                       : Icons.check_circle_outline_rounded,
-                  color: isError ? VoxoraColors.danger : VoxoraColors.accent,
+                  color: isError ? VoxoraColors.danger : VoxoraColors.text,
                   size: 19,
                 ),
                 const SizedBox(width: 10),
@@ -324,7 +324,7 @@ class _RecorderStage extends StatelessWidget {
               color: controller.isRecording
                   ? VoxoraColors.accent
                   : controller.isTranscribing
-                  ? VoxoraColors.warning
+                  ? VoxoraColors.mutedStrong
                   : VoxoraColors.muted,
               fontSize: controller.isRecording ? 14 : 11,
               fontWeight: FontWeight.w600,
@@ -422,9 +422,10 @@ class _RadialRecorderState extends State<_RadialRecorder>
   @override
   Widget build(BuildContext context) {
     final disabled = widget.activity == VoxoraActivity.transcribing;
+    final recording = widget.activity == VoxoraActivity.recording;
     final color = switch (widget.activity) {
       VoxoraActivity.idle => VoxoraColors.text,
-      VoxoraActivity.recording => VoxoraColors.accent,
+      VoxoraActivity.recording => VoxoraColors.ink,
       VoxoraActivity.transcribing => VoxoraColors.surfaceRaised,
     };
     final icon = switch (widget.activity) {
@@ -433,10 +434,11 @@ class _RadialRecorderState extends State<_RadialRecorder>
       VoxoraActivity.transcribing => Icons.graphic_eq_rounded,
     };
     final iconColor = switch (widget.activity) {
-      VoxoraActivity.idle => const Color(0xFF111110),
-      VoxoraActivity.recording => Colors.white,
-      VoxoraActivity.transcribing => VoxoraColors.warning,
+      VoxoraActivity.idle => VoxoraColors.ink,
+      VoxoraActivity.recording => VoxoraColors.text,
+      VoxoraActivity.transcribing => VoxoraColors.mutedStrong,
     };
+    final pulse = (math.sin(_ticker.value * math.pi * 2) + 1) / 2;
     return Semantics(
       button: true,
       enabled: !disabled,
@@ -474,13 +476,24 @@ class _RadialRecorderState extends State<_RadialRecorder>
                   decoration: BoxDecoration(
                     color: color,
                     shape: BoxShape.circle,
-                    border: widget.activity == VoxoraActivity.transcribing
-                        ? Border.all(color: VoxoraColors.borderStrong)
-                        : null,
+                    border: switch (widget.activity) {
+                      VoxoraActivity.recording => Border.all(
+                        color: VoxoraColors.accent.withValues(
+                          alpha: 0.55 + pulse * 0.45,
+                        ),
+                        width: 1.6,
+                      ),
+                      VoxoraActivity.transcribing => Border.all(
+                        color: VoxoraColors.borderStrong,
+                      ),
+                      VoxoraActivity.idle => null,
+                    },
                     boxShadow: [
                       BoxShadow(
-                        color: widget.activity == VoxoraActivity.recording
-                            ? VoxoraColors.accent.withValues(alpha: 0.20)
+                        color: recording
+                            ? VoxoraColors.accent.withValues(
+                                alpha: 0.14 + pulse * 0.10,
+                              )
                             : Colors.black.withValues(alpha: 0.28),
                         blurRadius: 24,
                         offset: const Offset(0, 8),
@@ -490,6 +503,25 @@ class _RadialRecorderState extends State<_RadialRecorder>
                   child: Icon(icon, color: iconColor, size: 36),
                 ),
               ),
+              if (recording)
+                Positioned(
+                  top: 48,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: Opacity(
+                      opacity: 0.42 + pulse * 0.58,
+                      child: Container(
+                        width: 7,
+                        height: 7,
+                        decoration: const BoxDecoration(
+                          color: VoxoraColors.accent,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
@@ -536,11 +568,11 @@ class _SpectrumRingPainter extends CustomPainter {
       final paint = Paint()
         ..strokeWidth = 3
         ..strokeCap = StrokeCap.round
-        ..color = VoxoraColors.warning;
+        ..color = VoxoraColors.text;
       for (var index = 0; index < 20; index++) {
         final angle = progress * math.pi * 2 + index * math.pi * 2 / 20;
         final alpha = ((index + 1) / 20).clamp(0.15, 1.0);
-        paint.color = VoxoraColors.warning.withValues(alpha: alpha);
+        paint.color = VoxoraColors.text.withValues(alpha: alpha * 0.82);
         final start = center + Offset(math.cos(angle), math.sin(angle)) * 69;
         final end = center + Offset(math.cos(angle), math.sin(angle)) * 76;
         canvas.drawLine(start, end, paint);
@@ -551,7 +583,7 @@ class _SpectrumRingPainter extends CustomPainter {
     final paint = Paint()
       ..strokeWidth = 3.4
       ..strokeCap = StrokeCap.round
-      ..color = VoxoraColors.accent;
+      ..color = VoxoraColors.text;
     const barCount = 22;
     for (var index = 0; index < barCount; index++) {
       final mirrored = index < 11 ? index : 21 - index;
@@ -561,8 +593,8 @@ class _SpectrumRingPainter extends CustomPainter {
       final inner = 69.0;
       final outer = inner + 5 + intensity * 17;
       final direction = Offset(math.cos(angle), math.sin(angle));
-      paint.color = VoxoraColors.accent.withValues(
-        alpha: 0.38 + intensity * 0.62,
+      paint.color = VoxoraColors.text.withValues(
+        alpha: 0.28 + intensity * 0.72,
       );
       canvas.drawLine(
         center + direction * inner,
@@ -805,7 +837,7 @@ class _TranscriptCard extends StatelessWidget {
                     tooltip: 'Copiar',
                     visualDensity: VisualDensity.compact,
                     iconSize: 17,
-                    color: VoxoraColors.mutedStrong,
+                    color: VoxoraColors.toggle,
                     icon: const Icon(Icons.copy_rounded),
                   ),
                   PopupMenuButton<String>(
@@ -1035,12 +1067,12 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                                 width: double.infinity,
                                 padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
-                                  color: VoxoraColors.warning.withValues(
+                                  color: VoxoraColors.accent.withValues(
                                     alpha: 0.08,
                                   ),
                                   borderRadius: BorderRadius.circular(10),
                                   border: Border.all(
-                                    color: VoxoraColors.warning.withValues(
+                                    color: VoxoraColors.accent.withValues(
                                       alpha: 0.32,
                                     ),
                                   ),
@@ -1556,13 +1588,13 @@ class _TranscriptionModelPickerState extends State<_TranscriptionModelPicker> {
           final selected = model.id == controller.transcriptionModel;
           return ListTile(
             selected: selected,
-            selectedTileColor: VoxoraColors.accent.withValues(alpha: 0.07),
+            selectedTileColor: VoxoraColors.text.withValues(alpha: 0.07),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
             ),
             leading: Icon(
               selected ? Icons.check_circle_rounded : Icons.circle_outlined,
-              color: selected ? VoxoraColors.accent : VoxoraColors.muted,
+              color: selected ? VoxoraColors.text : VoxoraColors.muted,
               size: 21,
             ),
             title: Text(
@@ -1747,7 +1779,7 @@ class _AboutAndUpdates extends StatelessWidget {
                     minHeight: 3,
                     borderRadius: BorderRadius.circular(99),
                     backgroundColor: VoxoraColors.border,
-                    color: VoxoraColors.accent,
+                    color: VoxoraColors.text,
                   ),
                 ],
                 const SizedBox(height: 12),
@@ -1784,7 +1816,7 @@ class _ChannelPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final beta = label == 'beta';
-    final color = beta ? VoxoraColors.warning : VoxoraColors.accent;
+    final color = beta ? VoxoraColors.accent : VoxoraColors.mutedStrong;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -1876,7 +1908,7 @@ class _SettingsSwitch extends StatelessWidget {
         subtitle,
         style: const TextStyle(color: VoxoraColors.muted, fontSize: 11.5),
       ),
-      activeThumbColor: VoxoraColors.accent,
+      activeThumbColor: VoxoraColors.toggle,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
     );
   }

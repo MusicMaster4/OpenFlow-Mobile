@@ -571,8 +571,8 @@ private class FloatingWaveView(
 
         val ringColor = when {
             now < errorUntil -> Color.rgb(239, 68, 68)
-            visualState == "recording" -> Color.rgb(16, 185, 129)
-            visualState == "transcribing" -> Color.rgb(245, 158, 11)
+            visualState == "recording" -> Color.rgb(239, 68, 68)
+            visualState == "transcribing" -> Color.rgb(234, 234, 234)
             else -> Color.rgb(69, 69, 63)
         }
         stroke.color = ringColor
@@ -599,6 +599,18 @@ private class FloatingWaveView(
             else -> drawIdle(canvas, centerX, centerY)
         }
         canvas.restore()
+        if (visualState == "recording" && now >= errorUntil) {
+            val pulse = ((sin(phase * 8.0) + 1.0) * 0.5).toFloat()
+            paint.color = Color.rgb(239, 68, 68)
+            paint.alpha = (110 + pulse * 145f).toInt()
+            canvas.drawCircle(
+                centerX,
+                centerY - radius + 11.5f * density,
+                (2.6f + pulse * 0.7f) * density,
+                paint,
+            )
+            paint.alpha = 255
+        }
         canvas.restore()
         if (visualState != "idle" || now < errorUntil || stateProgress < 1f) {
             postInvalidateOnAnimation()
@@ -623,8 +635,8 @@ private class FloatingWaveView(
         val gap = 2.8f * density
         val total = indexes.size * barWidth + (indexes.size - 1) * gap
         var x = centerX - total / 2f
-        paint.color = Color.rgb(6, 78, 59)
-        paint.alpha = 78
+        paint.color = Color.rgb(32, 32, 29)
+        paint.alpha = 88
         canvas.drawRoundRect(
             centerX - 21.5f * density,
             centerY - 14f * density,
@@ -634,7 +646,7 @@ private class FloatingWaveView(
             14f * density,
             paint,
         )
-        paint.color = Color.rgb(16, 185, 129)
+        paint.color = Color.rgb(234, 234, 234)
         for ((barIndex, sourceIndex) in indexes.withIndex()) {
             val band = currentBands[sourceIndex].toFloat()
             val breathing = ((sin(phase * 5.2 + sourceIndex * 0.74) + 1.0) * 0.5).toFloat()
@@ -657,7 +669,7 @@ private class FloatingWaveView(
     }
 
     private fun drawLoading(canvas: Canvas, centerX: Float, centerY: Float, phase: Double) {
-        paint.color = Color.rgb(120, 53, 15)
+        paint.color = Color.rgb(32, 32, 29)
         paint.alpha = 72
         canvas.drawRoundRect(
             centerX - 21f * density,
@@ -668,7 +680,7 @@ private class FloatingWaveView(
             10.5f * density,
             paint,
         )
-        paint.color = Color.rgb(245, 158, 11)
+        paint.color = Color.rgb(234, 234, 234)
         for (index in 0 until 5) {
             val wave = ((sin(phase * 5.1 - index * 0.82) + 1.0) * 0.5).toFloat()
             val x = centerX + (index - 2) * 7.2f * density
