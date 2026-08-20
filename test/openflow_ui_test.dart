@@ -55,40 +55,6 @@ class _FakeOpenRouterService extends OpenRouterService {
 }
 
 void main() {
-  testWidgets('transcribing state shows the selected transcription model', (
-    tester,
-  ) async {
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(412, 915);
-    addTearDown(tester.view.reset);
-
-    final controller = VoxoraController(
-      storage: LocalStorageService(),
-      openRouter: _FakeOpenRouterService(),
-      recording: RecordingService(),
-      floatingOverlay: FloatingOverlayService(),
-    );
-    controller.transcriptionModel = 'openai/gpt-4o-mini-transcribe';
-    controller.activity = VoxoraActivity.transcribing;
-
-    await tester.pumpWidget(
-      MaterialApp(
-        debugShowCheckedModeBanner: false,
-        theme: VoxoraTheme.dark,
-        home: HomeScreen(controller: controller),
-      ),
-    );
-
-    expect(find.text('openai/gpt-4o-mini-transcribe'), findsOneWidget);
-    expect(find.text('MAI-Transcribe 1.5'), findsNothing);
-
-    await controller.loadTranscriptionModels();
-    await tester.pump();
-
-    expect(find.text('OpenAI: GPT-4o Mini Transcribe'), findsOneWidget);
-    expect(find.text('MAI-Transcribe 1.5'), findsNothing);
-  });
-
   testWidgets('settings shows update check and download feedback immediately', (
     tester,
   ) async {
@@ -201,4 +167,42 @@ void main() {
       expect(find.text('Verificar atualizações'), findsOneWidget);
     },
   );
+
+  testWidgets('transcribing state shows the selected transcription model', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(412, 915);
+    addTearDown(tester.view.reset);
+
+    final controller = VoxoraController(
+      storage: LocalStorageService(),
+      openRouter: _FakeOpenRouterService(),
+      recording: RecordingService(),
+      floatingOverlay: FloatingOverlayService(),
+    );
+    addTearDown(controller.dispose);
+    controller.transcriptionModel = 'openai/gpt-4o-mini-transcribe';
+    controller.activity = VoxoraActivity.transcribing;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: VoxoraTheme.dark,
+        home: HomeScreen(controller: controller),
+      ),
+    );
+
+    expect(find.text('openai/gpt-4o-mini-transcribe'), findsOneWidget);
+    expect(find.text('MAI-Transcribe 1.5'), findsNothing);
+
+    await controller.loadTranscriptionModels();
+    await tester.pump();
+
+    expect(find.text('OpenAI: GPT-4o Mini Transcribe'), findsOneWidget);
+    expect(find.text('MAI-Transcribe 1.5'), findsNothing);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
 }
