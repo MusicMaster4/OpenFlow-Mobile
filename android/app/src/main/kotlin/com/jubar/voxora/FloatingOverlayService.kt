@@ -599,18 +599,6 @@ private class FloatingWaveView(
             else -> drawIdle(canvas, centerX, centerY)
         }
         canvas.restore()
-        if (visualState == "recording" && now >= errorUntil) {
-            val pulse = ((sin(phase * 8.0) + 1.0) * 0.5).toFloat()
-            paint.color = Color.rgb(239, 68, 68)
-            paint.alpha = (110 + pulse * 145f).toInt()
-            canvas.drawCircle(
-                centerX,
-                centerY - radius + 11.5f * density,
-                (2.6f + pulse * 0.7f) * density,
-                paint,
-            )
-            paint.alpha = 255
-        }
         canvas.restore()
         if (visualState != "idle" || now < errorUntil || stateProgress < 1f) {
             postInvalidateOnAnimation()

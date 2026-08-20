@@ -503,25 +503,6 @@ class _RadialRecorderState extends State<_RadialRecorder>
                   child: Icon(icon, color: iconColor, size: 36),
                 ),
               ),
-              if (recording)
-                Positioned(
-                  top: 48,
-                  left: 0,
-                  right: 0,
-                  child: Center(
-                    child: Opacity(
-                      opacity: 0.42 + pulse * 0.58,
-                      child: Container(
-                        width: 7,
-                        height: 7,
-                        decoration: const BoxDecoration(
-                          color: VoxoraColors.accent,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
             ],
           ),
         ),
