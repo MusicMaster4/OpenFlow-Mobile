@@ -66,12 +66,7 @@ void main() {
         if (scenario.autoPaste) {
           expect(overlay.keepInClipboard.single, scenario.autoCopy);
         }
-        expect(
-          overlay.feedbackSounds,
-          scenario.autoPaste
-              ? <String>['start', 'close']
-              : <String>['start', 'close', 'loaded'],
-        );
+        expect(overlay.feedbackSounds, <String>['start', 'close']);
       },
     );
   }
