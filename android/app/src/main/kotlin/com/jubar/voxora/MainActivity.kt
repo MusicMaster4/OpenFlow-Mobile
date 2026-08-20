@@ -5,6 +5,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
+import android.os.Bundle
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -17,6 +21,29 @@ class MainActivity : FlutterActivity() {
     private var updateChannel: MethodChannel? = null
     private var updateExecutor: ExecutorService? = null
     private lateinit var appUpdater: AppUpdater
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        hideNavigationControls()
+    }
+
+    override fun onPostResume() {
+        super.onPostResume()
+        hideNavigationControls()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) hideNavigationControls()
+    }
+
+    private fun hideNavigationControls() {
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            hide(WindowInsetsCompat.Type.navigationBars())
+        }
+    }
 
     override fun provideFlutterEngine(context: Context): FlutterEngine? =
         OpenFlowEngine.cached()

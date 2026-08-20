@@ -84,17 +84,12 @@ jobs:
             fi
           fi
 
-  build:
-    name: Test and build signed APK
+  validate:
+    name: Validate source
     needs: version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-
-      - uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: "17"
 
       - uses: subosito/flutter-action@v2
         with:
@@ -109,6 +104,31 @@ jobs:
           dart format --output=none --set-exit-if-changed lib test
           flutter analyze
           flutter test
+
+  build:
+    name: Build signed APK
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+          cache-dependency-path: |
+            pubspec.lock
+            android/gradle.properties
+            android/*.gradle.kts
+            android/app/*.gradle.kts
+            android/gradle/wrapper/gradle-wrapper.properties
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.41.1
+          cache: true
 
       - name: Configure the persistent release signing key
         env:
@@ -155,11 +175,18 @@ jobs:
           path: release-assets/*.apk
           if-no-files-found: error
           retention-days: 1
+          # APK files are already compressed ZIP containers.
+          compression-level: 0
 
   assemble:
-    name: Assemble release
-    needs: [version, build]
+    name: Assemble and publish release
+    needs: [version, validate, build]
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ needs.version.outputs.tag }}
+      CHANNEL: ${{ needs.version.outputs.channel }}
+      REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@v5
 
@@ -180,12 +207,10 @@ jobs:
 
       - name: Upload the APK and manifest to the versioned release
         if: needs.version.outputs.publish == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload "${{ needs.version.outputs.tag }}" \
+          gh release upload "$TAG" \
             release-assets/* android-update*.json \
-            --repo "$GITHUB_REPOSITORY" --clobber
+            --repo "$REPO" --clobber
 
       - name: Keep an unpublished build as a workflow artifact
         if: needs.version.outputs.publish != 'true'
@@ -197,32 +222,8 @@ jobs:
             android-update*.json
           if-no-files-found: error
 
-  publish:
-    name: Publish release
-    needs: [version, assemble]
-    if: needs.version.outputs.publish == 'true'
-    runs-on: ubuntu-latest
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      TAG: ${{ needs.version.outputs.tag }}
-      CHANNEL: ${{ needs.version.outputs.channel }}
-      REPO: ${{ github.repository }}
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/download-artifact@v5
-        if: needs.version.outputs.channel == 'testing'
-        with:
-          name: openflow-${{ needs.version.outputs.channel }}-${{ needs.version.outputs.version }}
-          path: release-assets
-
-      - name: Download the beta manifest
-        if: needs.version.outputs.channel == 'testing'
-        run: |
-          gh release download "$TAG" --repo "$REPO" --pattern android-update-beta.json
-
       - name: Update the permanent beta channel pointer
-        if: needs.version.outputs.channel == 'testing'
+        if: needs.version.outputs.publish == 'true' && needs.version.outputs.channel == 'testing'
         run: |
           if ! gh release view "$BETA_POINTER_TAG" --repo "$REPO" >/dev/null 2>&1; then
             gh release create "$BETA_POINTER_TAG" --repo "$REPO" --prerelease \
@@ -234,4 +235,5 @@ jobs:
             --repo "$REPO" --clobber
 
       - name: Make the completed release visible
+        if: needs.version.outputs.publish == 'true'
         run: gh release edit "$TAG" --repo "$REPO" --draft=false

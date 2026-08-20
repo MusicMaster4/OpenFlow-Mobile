@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -258,6 +259,7 @@ class _ApiKeyNotice extends StatelessWidget {
         color: VoxoraColors.surfaceSoft,
         borderRadius: BorderRadius.circular(10),
         child: InkWell(
+          key: const Key('transcription-model-field'),
           onTap: onTap,
           borderRadius: BorderRadius.circular(10),
           child: Container(
@@ -315,7 +317,7 @@ class _RecorderStage extends StatelessWidget {
             controller.isRecording
                 ? _formatDuration(controller.recordingDurationMs)
                 : controller.isTranscribing
-                ? 'MAI-Transcribe 1.5'
+                ? controller.transcriptionModelLabel
                 : 'PRONTO',
             key: ValueKey(controller.activity),
             style: TextStyle(
@@ -752,14 +754,52 @@ class _TranscriptCard extends StatelessWidget {
               const SizedBox(height: 8),
               Row(
                 children: [
-                  Text(
-                    '${_sourceLabel(entry.source)}  •  ${_relativeTime(entry.createdAt)}',
-                    style: const TextStyle(
-                      color: VoxoraColors.muted,
-                      fontSize: 10.5,
+                  Expanded(
+                    child: Text(
+                      '${_sourceLabel(entry.source)}  •  ${_relativeTime(entry.createdAt)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: VoxoraColors.muted,
+                        fontSize: 10.5,
+                      ),
                     ),
                   ),
-                  const Spacer(),
+                  const SizedBox(width: 8),
+                  Tooltip(
+                    message: 'Custo desta transcrição na OpenRouter',
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: VoxoraColors.surfaceRaised,
+                        borderRadius: BorderRadius.circular(99),
+                        border: Border.all(color: VoxoraColors.border),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.payments_outlined,
+                            size: 12,
+                            color: VoxoraColors.muted,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            _formatCostUsd(entry.costUsd),
+                            style: const TextStyle(
+                              color: VoxoraColors.mutedStrong,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 2),
                   IconButton(
                     onPressed: onCopy,
                     tooltip: 'Copiar',
@@ -828,11 +868,28 @@ class _SettingsSheetState extends State<_SettingsSheet> {
     super.dispose();
   }
 
+  Future<void> _openModelPicker() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) =>
+          _TranscriptionModelPicker(controller: widget.controller),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
     return AnimatedBuilder(
-      animation: widget.controller,
+      // Update checks and downloads run independently from the main
+      // controller. Listen to both so the open settings sheet reflects each
+      // update phase immediately, without requiring it to be closed/reopened.
+      animation: Listenable.merge([
+        widget.controller,
+        widget.controller.updates,
+      ]),
       builder: (context, _) {
         final controller = widget.controller;
         return Container(
@@ -869,6 +926,7 @@ class _SettingsSheetState extends State<_SettingsSheet> {
               const Divider(height: 1),
               Expanded(
                 child: ListView(
+                  key: const Key('settings-list'),
                   padding: EdgeInsets.fromLTRB(16, 16, 16, 24 + bottomInset),
                   children: [
                     const _SettingsLabel('OPENROUTER'),
@@ -937,6 +995,11 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                           ),
                         ],
                       ),
+                    ),
+                    const SizedBox(height: 10),
+                    _TranscriptionModelField(
+                      controller: controller,
+                      onTap: controller.isBusy ? null : _openModelPicker,
                     ),
                     const SizedBox(height: 22),
                     const _SettingsLabel('CÍRCULO FLUTUANTE'),
@@ -1102,7 +1165,8 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                           _SettingsSwitch(
                             icon: Icons.copy_all_outlined,
                             title: 'Copiar automaticamente',
-                            subtitle: 'Ao concluir uma transcrição',
+                            subtitle:
+                                'Mantém a transcrição na área de transferência',
                             value: controller.autoCopy,
                             onChanged: controller.setAutoCopy,
                           ),
@@ -1163,7 +1227,10 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                     const SizedBox(height: 22),
                     const _SettingsLabel('SOBRE E ATUALIZAÇÕES'),
                     const SizedBox(height: 8),
-                    _AboutAndUpdates(updates: controller.updates),
+                    _AboutAndUpdates(
+                      updates: controller.updates,
+                      transcriptionModel: controller.transcriptionModel,
+                    ),
                     if (controller.history.isNotEmpty) ...[
                       const SizedBox(height: 22),
                       const _SettingsLabel('DADOS LOCAIS'),
@@ -1203,10 +1270,335 @@ class _SettingsSheetState extends State<_SettingsSheet> {
   }
 }
 
+class _TranscriptionModelField extends StatelessWidget {
+  const _TranscriptionModelField({
+    required this.controller,
+    required this.onTap,
+  });
+
+  final VoxoraController controller;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = controller.transcriptionModels
+        .where((model) => model.id == controller.transcriptionModel)
+        .firstOrNull;
+    return Semantics(
+      button: true,
+      label: 'Modelo de transcrição',
+      value: selected?.name ?? controller.transcriptionModel,
+      child: Material(
+        color: VoxoraColors.surfaceSoft,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: VoxoraColors.border),
+        ),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.model_training_outlined,
+                  color: VoxoraColors.muted,
+                  size: 21,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Modelo de transcrição',
+                        style: TextStyle(
+                          color: VoxoraColors.muted,
+                          fontSize: 11.5,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        selected?.name ?? controller.transcriptionModel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      if (selected != null && selected.id != selected.name) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          selected.id,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: VoxoraColors.muted,
+                            fontSize: 10.5,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Icon(
+                  Icons.unfold_more_rounded,
+                  color: VoxoraColors.muted,
+                  size: 20,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TranscriptionModelPicker extends StatefulWidget {
+  const _TranscriptionModelPicker({required this.controller});
+
+  final VoxoraController controller;
+
+  @override
+  State<_TranscriptionModelPicker> createState() =>
+      _TranscriptionModelPickerState();
+}
+
+class _TranscriptionModelPickerState extends State<_TranscriptionModelPicker> {
+  late final TextEditingController _searchController;
+  String _query = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController = TextEditingController();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        unawaited(widget.controller.loadTranscriptionModels());
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: widget.controller,
+      builder: (context, _) {
+        final controller = widget.controller;
+        final normalizedQuery = _query.trim().toLowerCase();
+        final models = controller.transcriptionModels
+            .where((model) {
+              if (normalizedQuery.isEmpty) return true;
+              return model.name.toLowerCase().contains(normalizedQuery) ||
+                  model.id.toLowerCase().contains(normalizedQuery) ||
+                  model.description.toLowerCase().contains(normalizedQuery);
+            })
+            .toList(growable: false);
+        final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+
+        return Container(
+          height: MediaQuery.sizeOf(context).height * 0.82,
+          padding: EdgeInsets.only(bottom: keyboardInset),
+          decoration: const BoxDecoration(
+            color: VoxoraColors.surface,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            border: Border(top: BorderSide(color: VoxoraColors.border)),
+          ),
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 10, 8),
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Modelo de transcrição',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          SizedBox(height: 2),
+                          Text(
+                            'Modelos disponíveis na OpenRouter',
+                            style: TextStyle(
+                              color: VoxoraColors.muted,
+                              fontSize: 11.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                child: TextField(
+                  key: const Key('transcription-model-search'),
+                  controller: _searchController,
+                  autofocus: true,
+                  autocorrect: false,
+                  textInputAction: TextInputAction.search,
+                  onChanged: (value) => setState(() => _query = value),
+                  decoration: InputDecoration(
+                    hintText: 'Pesquisar por nome ou provedor',
+                    prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                    suffixIcon: _query.isEmpty
+                        ? null
+                        : IconButton(
+                            tooltip: 'Limpar pesquisa',
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() => _query = '');
+                            },
+                            icon: const Icon(Icons.close_rounded, size: 18),
+                          ),
+                  ),
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(child: _modelList(context, controller, models)),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _modelList(
+    BuildContext context,
+    VoxoraController controller,
+    List<TranscriptionModel> models,
+  ) {
+    if (controller.isLoadingTranscriptionModels && models.isEmpty) {
+      return const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(strokeWidth: 2.5),
+            SizedBox(height: 14),
+            Text(
+              'Carregando modelos…',
+              style: TextStyle(color: VoxoraColors.mutedStrong),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (controller.transcriptionModelsError != null && models.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.cloud_off_outlined,
+                color: VoxoraColors.muted,
+                size: 30,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                controller.transcriptionModelsError!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: VoxoraColors.mutedStrong),
+              ),
+              const SizedBox(height: 14),
+              OutlinedButton.icon(
+                onPressed: () =>
+                    controller.loadTranscriptionModels(force: true),
+                icon: const Icon(Icons.refresh_rounded, size: 18),
+                label: const Text('Tentar novamente'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (models.isEmpty) {
+      return const Center(
+        child: Text(
+          'Nenhum modelo encontrado.',
+          style: TextStyle(color: VoxoraColors.mutedStrong),
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: () => controller.loadTranscriptionModels(force: true),
+      child: ListView.separated(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        padding: const EdgeInsets.fromLTRB(8, 6, 8, 24),
+        itemCount: models.length,
+        separatorBuilder: (_, _) => const Divider(height: 1, indent: 54),
+        itemBuilder: (context, index) {
+          final model = models[index];
+          final selected = model.id == controller.transcriptionModel;
+          return ListTile(
+            selected: selected,
+            selectedTileColor: VoxoraColors.accent.withValues(alpha: 0.07),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            leading: Icon(
+              selected ? Icons.check_circle_rounded : Icons.circle_outlined,
+              color: selected ? VoxoraColors.accent : VoxoraColors.muted,
+              size: 21,
+            ),
+            title: Text(
+              model.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+              ),
+            ),
+            subtitle: Text(
+              model.id,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: VoxoraColors.muted, fontSize: 11),
+            ),
+            onTap: () async {
+              await controller.setTranscriptionModel(model.id);
+              if (context.mounted) Navigator.pop(context);
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
 class _AboutAndUpdates extends StatelessWidget {
-  const _AboutAndUpdates({required this.updates});
+  const _AboutAndUpdates({
+    required this.updates,
+    required this.transcriptionModel,
+  });
 
   final AppUpdateService updates;
+  final String transcriptionModel;
 
   @override
   Widget build(BuildContext context) {
@@ -1303,7 +1695,7 @@ class _AboutAndUpdates extends StatelessWidget {
                       ),
                       const SizedBox(height: 3),
                       Text(
-                        'v${build.versionName}  •  ${OpenRouterService.model}',
+                        'v${build.versionName}  •  $transcriptionModel',
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: VoxoraColors.muted,
@@ -1495,6 +1887,12 @@ String _formatDuration(int milliseconds) {
   final minutes = totalSeconds ~/ 60;
   final seconds = totalSeconds % 60;
   return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+}
+
+String _formatCostUsd(double value) {
+  final normalized = value.isFinite && value > 0 ? value : 0.0;
+  final decimals = normalized > 0 && normalized < 0.0001 ? 6 : 4;
+  return '\$${normalized.toStringAsFixed(decimals)}';
 }
 
 String _sourceLabel(String source) {
