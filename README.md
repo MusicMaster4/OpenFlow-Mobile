@@ -1,115 +1,115 @@
 <div align="center">
-  <img src="assets/icon/openflow_icon.png" width="112" alt="Ícone do OpenFlow" />
+  <img src="assets/icon/openflow_icon.png" width="112" alt="OpenFlow icon" />
   <h1>OpenFlow Mobile</h1>
   <p><strong>Write at the speed of thought.</strong></p>
-  <p>Ditado rápido no Android, em qualquer aplicativo, com transcrição pela OpenRouter.</p>
+  <p>Fast dictation on Android, in any app, with OpenRouter transcription.</p>
 
   <p>
-    <a href="https://github.com/MusicMaster4/OpenFlow-Mobile/releases/latest"><img alt="Release stable" src="https://img.shields.io/github/v/release/MusicMaster4/OpenFlow-Mobile?display_name=tag&sort=semver&style=flat-square&color=10b981" /></a>
+    <a href="https://github.com/MusicMaster4/OpenFlow-Mobile/releases/latest"><img alt="Stable release" src="https://img.shields.io/github/v/release/MusicMaster4/OpenFlow-Mobile?display_name=tag&sort=semver&style=flat-square&color=10b981" /></a>
     <a href="https://github.com/MusicMaster4/OpenFlow-Mobile/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/MusicMaster4/OpenFlow-Mobile/ci.yml?branch=main&style=flat-square&label=tests" /></a>
     <img alt="Android 24+" src="https://img.shields.io/badge/Android-7.0%2B-3DDC84?style=flat-square&logo=android&logoColor=white" />
     <img alt="Flutter 3.41" src="https://img.shields.io/badge/Flutter-3.41-02569B?style=flat-square&logo=flutter&logoColor=white" />
   </p>
 
   <p>
-    <a href="https://github.com/MusicMaster4/OpenFlow-Mobile/releases/latest/download/openflow.apk"><strong>Baixar versão stable</strong></a>
+    <a href="https://github.com/MusicMaster4/OpenFlow-Mobile/releases/latest/download/openflow.apk"><strong>Download stable</strong></a>
     ·
-    <a href="https://github.com/MusicMaster4/OpenFlow-Mobile/releases/download/channel-testing/openflow-beta.apk"><strong>Baixar versão beta</strong></a>
+    <a href="https://github.com/MusicMaster4/OpenFlow-Mobile/releases/download/channel-testing/openflow-beta.apk"><strong>Download beta</strong></a>
   </p>
 </div>
 
 ---
 
-O OpenFlow transforma voz em texto sem interromper o que você está fazendo. Ative o círculo flutuante, fale e receba a transcrição no campo selecionado. O app também aceita arquivos de áudio, mantém um histórico local e mostra estatísticas de uso.
+OpenFlow turns speech into text without interrupting what you are doing. Turn on the floating circle, speak, and the transcript lands in the focused field. The app also accepts audio files, keeps a local history, and shows usage stats.
 
-## O que torna o OpenFlow diferente
+## What makes OpenFlow different
 
-| | Recurso | Como ajuda |
+| | Feature | What it does |
 |---|---|---|
-| 🎙️ | **Gravação instantânea** | Um toque inicia; outro conclui e transcreve. |
-| ◉ | **Círculo flutuante** | Grave sobre qualquer aplicativo sem trocar de tela. |
-| ⌨️ | **Colagem automática opcional** | Entrega o texto diretamente no campo selecionado. |
-| 📎 | **Importação de áudio** | Aceita WAV, MP3, M4A, AAC, FLAC, OGG e WebM. |
-| 📚 | **Histórico local** | Pesquisa, copia e remove até 100 transcrições no aparelho. |
-| 📊 | **Estatísticas** | Acompanha palavras, tempo de áudio e ritmo de uso. |
-| 🔐 | **Chave protegida** | A chave da OpenRouter fica no Android Keystore. |
-| ↻ | **Atualização no app** | Baixa, valida e instala o APK correto para o seu canal. |
+| 🎙️ | **Instant recording** | One tap starts; another finishes and transcribes. |
+| ◉ | **Floating circle** | Record over any app without switching screens. |
+| ⌨️ | **Optional auto-paste** | Inserts the text directly into the focused field. |
+| 📎 | **Audio import** | Accepts WAV, MP3, M4A, AAC, FLAC, OGG, and WebM. |
+| 📚 | **Local history** | Search, copy, and delete up to 100 transcripts on the device. |
+| 📊 | **Stats** | Tracks words, audio time, and usage pace. |
+| 🔐 | **Protected key** | The OpenRouter key stays in the Android Keystore. |
+| ↻ | **In-app updates** | Downloads, verifies, and installs the APK for your channel. |
 
-## Da voz ao texto
+## From voice to text
 
 ```mermaid
 flowchart LR
-    A[Microfone ou arquivo] --> B[Áudio preparado no aparelho]
+    A[Microphone or file] --> B[Audio prepared on device]
     B --> C[OpenRouter]
     C --> D[MAI Transcribe 1.5]
-    D --> E[Transcrição]
-    E --> F[Histórico local]
-    E --> G[Área de transferência]
-    E --> H[Campo selecionado]
+    D --> E[Transcript]
+    E --> F[Local history]
+    E --> G[Clipboard]
+    E --> H[Focused field]
 ```
 
-O modelo inicial é `microsoft/mai-transcribe-1.5`. Nas configurações, você pode pesquisar e escolher qualquer modelo de transcrição disponível na OpenRouter; a escolha fica salva no aparelho. O áudio é enviado somente quando uma transcrição é solicitada. O histórico de texto e as preferências continuam no aparelho.
+The default model is `microsoft/mai-transcribe-1.5`. In settings you can search and pick any transcription model available on OpenRouter; the choice is stored on the device. Audio is sent only when a transcription is requested. Transcript history and preferences stay on the device.
 
-## Instalação
+## Installation
 
-1. Baixe o APK **stable** ou **beta** nos links acima.
-2. Abra o arquivo no Android e autorize a instalação quando solicitado.
-3. No OpenFlow, adicione sua chave da [OpenRouter](https://openrouter.ai/keys).
-4. Opcionalmente, ative o círculo flutuante e a colagem automática nas configurações.
+1. Download the **stable** or **beta** APK from the links above.
+2. Open the file on Android and allow installation when prompted.
+3. In OpenFlow, add your [OpenRouter](https://openrouter.ai/keys) key.
+4. Optionally, turn on the floating circle and auto-paste in settings.
 
 > [!IMPORTANT]
-> Escolha um canal e permaneça nele. O atualizador nunca oferece uma versão beta para uma instalação stable, nem uma stable para uma instalação beta.
+> Pick a channel and stay on it. The updater never offers a beta build to a stable install, or a stable build to a beta install.
 
-## Dois canais, sem cruzamento
+## Two channels, no crossover
 
-| Canal instalado | Branch | Versão | Release | Manifesto consultado |
+| Installed channel | Branch | Version | Release | Manifest used |
 |---|---|---|---|---|
-| **stable** | `main` | `2.0.1` | Release normal, marcada como Latest | `releases/latest/.../android-update.json` |
+| **stable** | `main` | `2.0.1` | Regular release, marked as Latest | `releases/latest/.../android-update.json` |
 | **beta** | `testing` | `2.0.1-testing.3` | Pre-release | `releases/download/channel-testing/.../android-update-beta.json` |
 
-Cada APK recebe somente um endpoint no momento da compilação. Antes de baixar, o app ainda verifica o canal, o `versionCode`, a origem GitHub e o SHA-256 do arquivo. Essa dupla barreira impede que os canais se misturem mesmo se um manifesto for publicado incorretamente.
+Each APK is compiled with a single update endpoint. Before downloading, the app still checks the channel, `versionCode`, GitHub origin, and the file SHA-256. That second check keeps the channels from mixing even if a manifest is published incorrectly.
 
-### Como as versões avançam
+### How versions advance
 
-- O primeiro release de `main` é `v2.0.0`.
-- O próximo push em `testing` produz `v2.0.1-testing.1`, depois `.2`, `.3` e assim por diante.
-- O próximo push em `main` publica `v2.0.1` e reinicia a contagem da próxima beta.
-- Um disparo manual do workflow pode escolher `patch`, `minor` ou `major`.
-- Patch e minor carregam após `99`, seguindo o mesmo algoritmo usado pelo Duckweed.
+- The first `main` release is `v2.0.0`.
+- The next push to `testing` produces `v2.0.1-testing.1`, then `.2`, `.3`, and so on.
+- The next push to `main` publishes `v2.0.1` and resets the next beta count.
+- A manual workflow run can choose `patch`, `minor`, or `major`.
+- Patch and minor carry over after `99`, using the same algorithm as Duckweed.
 
-## Atualizar sem perder configurações
+## Update without losing settings
 
-Atualizações oficiais usam sempre:
+Official updates always use:
 
-- o mesmo `applicationId` (`com.jubar.voxora`);
-- o mesmo keystore de release;
-- a instalação por substituição do Android, sem desinstalar o pacote.
+- the same `applicationId` (`com.jubar.voxora`);
+- the same release keystore;
+- Android's in-place install, without uninstalling the package.
 
-Com isso, `SharedPreferences`, histórico, estatísticas e dados do Android Keystore são preservados. **Não desinstale o app antes de atualizar**, pois a desinstalação remove os dados locais.
+That keeps `SharedPreferences`, history, stats, and Android Keystore data. **Do not uninstall the app before updating.** Uninstalling wipes local data.
 
 > [!NOTE]
-> Um APK antigo assinado com chave de desenvolvimento não pode ser substituído por um release oficial assinado com outra chave. Essa migração inicial pode exigir uma reinstalação; depois dela, todos os releases oficiais preservam os dados normalmente.
+> An older APK signed with a development key cannot be replaced by an official release signed with a different key. That first migration may require a reinstall. After that, official releases keep data as usual.
 
-## Privacidade e permissões
+## Privacy and permissions
 
-| Permissão | Motivo |
+| Permission | Why |
 |---|---|
-| Microfone | Gravar o áudio que será transcrito. |
-| Exibir sobre outros apps | Mostrar o controle flutuante. |
-| Acessibilidade, opcional | Colar a transcrição no campo selecionado. |
-| Acesso à política de notificações, opcional | Silenciar interrupções durante a gravação. |
-| Instalar pacotes | Entregar atualizações verificadas pelo próprio app. |
+| Microphone | Record the audio to transcribe. |
+| Display over other apps | Show the floating control. |
+| Accessibility, optional | Paste the transcript into the focused field. |
+| Notification policy access, optional | Mute interruptions while recording. |
+| Install packages | Deliver updates verified by the app itself. |
 
-O serviço de acessibilidade é usado somente para inserir a transcrição solicitada. O OpenFlow não lê nem armazena o conteúdo da tela.
+The accessibility service is used only to insert the requested transcript. OpenFlow does not read or store screen contents.
 
-## Desenvolvimento local
+## Local development
 
-### Requisitos
+### Requirements
 
-- Flutter `3.41.1` ou mais recente compatível com Dart `3.11`
+- Flutter `3.41.1` or a later version compatible with Dart `3.11`
 - JDK `17`
 - Android SDK
-- Um aparelho ou emulador Android 7.0+ (API 24)
+- An Android 7.0+ device or emulator (API 24)
 
 ```bash
 flutter pub get
@@ -120,37 +120,37 @@ node --test scripts/*.test.mjs
 flutter build apk --release
 ```
 
-O APK fica em `build/app/outputs/flutter-apk/app-release.apk`.
+The APK is written to `build/app/outputs/flutter-apk/app-release.apk`.
 
-### Estrutura principal
+### Main layout
 
 ```text
 lib/
-├── src/controller/     estado e orquestração do app
-├── src/screens/        tela principal e estatísticas
-├── src/services/       gravação, OpenRouter, storage, overlay e updates
-└── src/models/         histórico e métricas
+├── src/controller/     app state and orchestration
+├── src/screens/        home screen and stats
+├── src/services/       recording, OpenRouter, storage, overlay, and updates
+└── src/models/         history and metrics
 
 android/app/src/main/
-├── kotlin/             overlay, acessibilidade, áudio e instalador de updates
-└── res/                ícones, sons e configuração Android
+├── kotlin/             overlay, accessibility, audio, and update installer
+└── res/                icons, sounds, and Android config
 
-scripts/                versionamento e geração do manifesto
-.github/workflows/      CI e releases stable/beta
+scripts/                versioning and manifest generation
+.github/workflows/      CI and stable/beta releases
 ```
 
-## Configurar releases no GitHub
+## Set up GitHub releases
 
-O workflow de release precisa de um único keystore permanente. Cadastre estes secrets em **Settings → Secrets and variables → Actions**:
+The release workflow needs a single permanent keystore. Add these secrets under **Settings → Secrets and variables → Actions**:
 
-| Secret | Conteúdo |
+| Secret | Contents |
 |---|---|
-| `ANDROID_KEYSTORE_BASE64` | Arquivo PKCS12/JKS codificado em base64. |
-| `ANDROID_KEYSTORE_PASSWORD` | Senha do keystore. |
-| `ANDROID_KEY_ALIAS` | Alias da chave. |
-| `ANDROID_KEY_PASSWORD` | Senha da chave. |
+| `ANDROID_KEYSTORE_BASE64` | PKCS12/JKS file encoded as base64. |
+| `ANDROID_KEYSTORE_PASSWORD` | Keystore password. |
+| `ANDROID_KEY_ALIAS` | Key alias. |
+| `ANDROID_KEY_PASSWORD` | Key password. |
 
-Exemplo para criar a chave uma única vez:
+Example of creating the key once:
 
 ```bash
 keytool -genkeypair -v \
@@ -160,17 +160,17 @@ keytool -genkeypair -v \
   -keyalg RSA -keysize 4096 -validity 10000
 ```
 
-Guarde o arquivo e as senhas fora do repositório. Perder ou trocar essa chave impede atualizações sobre instalações existentes.
+Keep the file and passwords out of the repository. Losing or replacing this key blocks updates over existing installs.
 
-## Publicação automática
+## Automatic publishing
 
-- Push em `main`: testa, cria a próxima versão stable, assina `openflow.apk`, gera o manifesto e publica um release normal.
-- Push em `testing`: testa, cria a próxima beta, assina `openflow-beta.apk`, publica uma pre-release e atualiza o ponteiro permanente `channel-testing`.
-- Pull requests e branches de feature: executam apenas formatação, análise e testes.
-- Alterações somente em documentação não disparam um release.
+- Push to `main`: tests, creates the next stable version, signs `openflow.apk`, writes the manifest, and publishes a regular release.
+- Push to `testing`: tests, creates the next beta, signs `openflow-beta.apk`, publishes a pre-release, and updates the permanent `channel-testing` pointer.
+- Pull requests and feature branches: format, analyze, and test only.
+- Documentation-only changes do not trigger a release.
 
 ---
 
 <div align="center">
-  <sub>OpenFlow Mobile · voz entrando, texto fluindo.</sub>
+  <sub>OpenFlow Mobile · voice in, text out.</sub>
 </div>
