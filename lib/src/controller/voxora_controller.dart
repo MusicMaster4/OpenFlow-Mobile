@@ -75,6 +75,12 @@ class VoxoraController extends ChangeNotifier {
   bool get isRecording => activity == VoxoraActivity.recording;
   bool get isTranscribing => activity == VoxoraActivity.transcribing;
   bool get isBusy => activity != VoxoraActivity.idle;
+  String get transcriptionModelLabel {
+    for (final model in _transcriptionModels) {
+      if (model.id == transcriptionModel) return model.name;
+    }
+    return transcriptionModel;
+  }
 
   Future<void> initialize() async {
     await _floatingOverlay.initialize(_handleOverlayAction);

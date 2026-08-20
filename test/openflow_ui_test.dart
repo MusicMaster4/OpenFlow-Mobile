@@ -40,7 +40,55 @@ class _FakeAppUpdateService extends AppUpdateService {
   }
 }
 
+class _FakeOpenRouterService extends OpenRouterService {
+  @override
+  Future<List<TranscriptionModel>> listTranscriptionModels({
+    String? apiKey,
+  }) async {
+    return const [
+      TranscriptionModel(
+        id: 'openai/gpt-4o-mini-transcribe',
+        name: 'OpenAI: GPT-4o Mini Transcribe',
+      ),
+    ];
+  }
+}
+
 void main() {
+  testWidgets('transcribing state shows the selected transcription model', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(412, 915);
+    addTearDown(tester.view.reset);
+
+    final controller = VoxoraController(
+      storage: LocalStorageService(),
+      openRouter: _FakeOpenRouterService(),
+      recording: RecordingService(),
+      floatingOverlay: FloatingOverlayService(),
+    );
+    controller.transcriptionModel = 'openai/gpt-4o-mini-transcribe';
+    controller.activity = VoxoraActivity.transcribing;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: VoxoraTheme.dark,
+        home: HomeScreen(controller: controller),
+      ),
+    );
+
+    expect(find.text('openai/gpt-4o-mini-transcribe'), findsOneWidget);
+    expect(find.text('MAI-Transcribe 1.5'), findsNothing);
+
+    await controller.loadTranscriptionModels();
+    await tester.pump();
+
+    expect(find.text('OpenAI: GPT-4o Mini Transcribe'), findsOneWidget);
+    expect(find.text('MAI-Transcribe 1.5'), findsNothing);
+  });
+
   testWidgets('settings shows update check and download feedback immediately', (
     tester,
   ) async {

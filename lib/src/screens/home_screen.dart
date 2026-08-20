@@ -317,7 +317,7 @@ class _RecorderStage extends StatelessWidget {
             controller.isRecording
                 ? _formatDuration(controller.recordingDurationMs)
                 : controller.isTranscribing
-                ? 'MAI-Transcribe 1.5'
+                ? controller.transcriptionModelLabel
                 : 'PRONTO',
             key: ValueKey(controller.activity),
             style: TextStyle(
