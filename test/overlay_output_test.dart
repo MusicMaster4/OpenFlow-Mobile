@@ -66,6 +66,12 @@ void main() {
         if (scenario.autoPaste) {
           expect(overlay.keepInClipboard.single, scenario.autoCopy);
         }
+        expect(
+          overlay.feedbackSounds,
+          scenario.autoPaste
+              ? <String>['start', 'close']
+              : <String>['start', 'close', 'loaded'],
+        );
       },
     );
   }
@@ -128,6 +134,7 @@ class _FakeOverlay extends FloatingOverlayService {
   final List<String> copiedTexts = [];
   final List<String> pastedTexts = [];
   final List<bool> keepInClipboard = [];
+  final List<String> feedbackSounds = [];
 
   @override
   Future<bool> hasRecordAudioPermission() async => true;
@@ -149,7 +156,9 @@ class _FakeOverlay extends FloatingOverlayService {
   }
 
   @override
-  Future<void> playFeedback(String sound) async {}
+  Future<void> playFeedback(String sound) async {
+    feedbackSounds.add(sound);
+  }
 
   @override
   Future<void> setRecordingActive({

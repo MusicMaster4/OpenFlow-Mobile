@@ -535,7 +535,7 @@ class VoxoraController extends ChangeNotifier {
           ? 'Transcrição pronta e copiada.'
           : 'Transcrição pronta.',
     );
-    if (soundEffectsEnabled) {
+    if (soundEffectsEnabled && !pasted) {
       await _floatingOverlay.playFeedback('loaded');
     }
   }
